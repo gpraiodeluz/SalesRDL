@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Loja Raio de Luz</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=Figtree:wght@400;600&display=swap">
+<style>
+:root{--bg:#fafafa;--surface:#fff;--ink:#111111;--muted:#5c5c5c;--sun:#ffe70e;--sun-d:#e6cf00;--sky:#111111;--line:#e3e3e3;--r:14px;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111111;--surface:#1c1c1c;--ink:#f5f5f5;--muted:#b5b5b5;--line:#333333;--sky:#ffe70e}}
+:root[data-theme="dark"]{--bg:#111111;--surface:#1c1c1c;--ink:#f5f5f5;--muted:#b5b5b5;--line:#333333;--sky:#ffe70e}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 Figtree,system-ui,sans-serif}
+h1,h2,h3{font-family:'Bricolage Grotesque',Figtree,sans-serif;line-height:1.1;margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 0}
+.brand{font:800 1.25rem 'Bricolage Grotesque',sans-serif;display:flex;align-items:center;gap:10px}
+.cartbtn{background:var(--ink);color:var(--bg);border:0;border-radius:99px;padding:9px 18px;font-weight:600;cursor:pointer}
+.hero{position:relative;overflow:hidden;border-radius:28px;background:var(--sun);color:#111111;padding:64px 36px;margin-bottom:40px}
+.hero::before{content:"";position:absolute;inset:0;background:repeating-conic-gradient(from 190deg at 100% 0,rgba(255,255,255,.45) 0 5deg,transparent 5deg 13deg)}
+.hero>*{position:relative}.hero{display:flex;align-items:center;justify-content:space-between;gap:24px}.herologo{width:min(300px,34%);height:auto}.brand img{height:38px;width:auto}
+.hero h1{font-size:clamp(2.6rem,8vw,5.2rem);font-weight:800;letter-spacing:-.03em;max-width:11ch}
+.hero p{max-width:44ch;font-size:1.1rem;margin:18px 0 26px}
+.cta{display:inline-block;background:#111111;color:#fff;border:0;border-radius:99px;padding:13px 26px;font-weight:600;text-decoration:none;cursor:pointer}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+.chip{border:1.5px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 16px;cursor:pointer;font-weight:600}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.pic{aspect-ratio:1;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 22%,var(--surface))}
+.pic svg{width:62%}
+.info{padding:16px;display:flex;flex-direction:column;gap:8px;flex:1}
+.info h3{font-size:1.15rem}
+.price{font-weight:700}
+.row{display:flex;gap:8px;margin-top:auto}
+.row select{flex:1;border:1.5px solid var(--line);background:var(--bg);border-radius:10px;padding:8px}
+.add{background:var(--sun);color:#111111;border:0;border-radius:10px;padding:8px 14px;font-weight:700;cursor:pointer}
+.add:hover{background:var(--sun-d)}
+.about{margin:56px 0;max-width:62ch}
+.about h2{font-size:2rem;margin-bottom:10px}
+footer{border-top:1px solid var(--line);padding:24px 0 40px;color:var(--muted);font-size:.9rem}
+/* carrinho */
+.drawer{position:fixed;inset:0 0 0 auto;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);transform:translateX(100%);transition:transform .25s;z-index:20;display:flex;flex-direction:column;padding:20px;padding-top:calc(20px + env(safe-area-inset-top,0px));padding-bottom:calc(20px + env(safe-area-inset-bottom,0px));overflow-y:auto}
+.drawer.open{transform:none}
+.veil{position:fixed;inset:0;background:rgba(10,15,30,.5);z-index:19;display:none}
+.veil.open{display:block}
+.item{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item small{color:var(--muted);display:block}
+.qty button{width:28px;height:28px;border-radius:8px;border:1.5px solid var(--line);background:var(--bg);cursor:pointer}
+form{display:grid;gap:10px;margin-top:16px}
+label{font-weight:600;font-size:.9rem;display:grid;gap:4px}
+input,textarea{border:1.5px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 11px}
+.total{display:flex;justify-content:space-between;font:700 1.2rem 'Bricolage Grotesque',sans-serif;margin-top:12px}
+.ok{background:color-mix(in srgb,var(--sun) 30%,var(--surface));border-radius:var(--r);padding:16px;margin-top:12px}
+.ok pre{white-space:pre-wrap;font:inherit;margin:8px 0}
+.x{align-self:flex-end;background:none;border:0;font-size:1.6rem;cursor:pointer}
+@media (max-width:640px){.hero{padding:40px 22px;flex-direction:column;align-items:flex-start}.herologo{width:60%}}
+@media (prefers-reduced-motion:reduce){.drawer{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><img src="logo.png" alt="" height="38" width="auto">Raio de Luz</div>
+    <button class="cartbtn" id="openCart">Carrinho (<span id="count">0</span>)</button>
+  </header>
+
+  <section class="hero">
+    <div><h1>Vista a luz do grupo.</h1>
+    <p>Camisetas, blusas, adesivos e mais. Cada compra ajuda a manter as atividades do Raio de Luz.</p>
+    <a class="cta" href="#produtos">Ver produtos</a></div>
+    <img class="herologo" src="logo.png" alt="Logo do grupo Raio de Luz">
+  </section>
+
+  <section id="produtos">
+    <div class="filters" id="filters" role="group" aria-label="Filtrar por categoria"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="about">
+    <h2>Como funciona o pedido</h2>
+    <p>Escolha os itens, preencha seus dados e envie o pedido. Nossa equipe entra em contato pelo WhatsApp para combinar o pagamento. Não fazemos envios: a entrega acontece durante os encontros do grupo.</p>
+  </section>
+</div>
+<footer><div class="wrap">Grupo Raio de Luz · Preços e fotos ainda são exemplos.</div></footer>
+
+<div class="veil" id="veil"></div>
+<aside class="drawer" id="drawer" aria-label="Carrinho" aria-hidden="true">
+  <button class="x" id="closeCart" aria-label="Fechar carrinho">×</button>
+  <h2>Seu pedido</h2>
+  <div id="items"></div>
+  <div class="total"><span>Total</span><span id="total">R$ 0,00</span></div>
+  <form id="form">
+    <label>Nome<input name="nome" required autocomplete="name"></label>
+    <label>WhatsApp<input name="whats" required inputmode="tel" autocomplete="tel" placeholder="(43) 99999-9999"></label>
+    <label>E-mail<input name="email" type="email" autocomplete="email"></label>
+    <label>Observações<textarea name="obs" rows="2" placeholder="Ex.: retiro no encontro de sábado"></textarea></label>
+    <button class="cta" type="submit">Enviar pedido</button>
+  </form>
+  <div id="done"></div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL="https://hwsaorlbexcmzgajhgps.supabase.co",SUPABASE_ANON_KEY="sb_publishable_79EGS7VroM7tfzWJItj55A_ZdGnhg6P";
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+const P=[
+ {id:1,nome:'Camiseta Raio de Luz',cat:'Camisetas',preco:45,cor:'#ffe70e',tipo:'tee',tam:['P','M','G','GG']},
+ {id:2,nome:'Camiseta Infantil',cat:'Camisetas',preco:38,cor:'#111111',tipo:'tee',tam:['4','6','8','10','12']},
+ {id:3,nome:'Blusa de moletom',cat:'Blusas',preco:110,cor:'#111111',tipo:'long',tam:['P','M','G','GG']},
+ {id:4,nome:'Blusa manga longa',cat:'Blusas',preco:70,cor:'#f4f4f4',tipo:'long',tam:['P','M','G','GG']},
+ {id:5,nome:'Kit de adesivos',cat:'Adesivos',preco:12,cor:'#ffe70e',tipo:'sticker',tam:['Único']},
+ {id:6,nome:'Adesivo grande',cat:'Adesivos',preco:6,cor:'#111111',tipo:'sticker',tam:['Único']},
+ {id:7,nome:'Caneca',cat:'Outros',preco:32,cor:'#111111',tipo:'mug',tam:['Único']},
+ {id:8,nome:'Ecobag',cat:'Outros',preco:25,cor:'#111111',tipo:'bag',tam:['Único']}
+];
+const sun='<g transform="translate(50 50)"><circle r="6" fill="#ffe70e"/><g stroke="#ffe70e" stroke-width="2.4" stroke-linecap="round"><path d="M0-11v-5M0 11v5M-11 0h-5M11 0h5M-8-8l-3-3M8 8l3 3M8-8l3-3M-8 8l-3 3"/></g></g>';
+function art(t,c){
+ const logo=(c==='#ffe70e'||c==='#f4f4f4')?sun.replaceAll('#ffe70e','#111111'):sun;
+ const S={
+  tee:`<path d="M30 14 10 26l8 16 9-5v49h46V37l9 5 8-16-20-12c-4 8-36 8-40 0z" fill="${c}"/><g transform="translate(0 -6) scale(1)">${logo}</g>`,
+  long:`<path d="M30 14 6 30l4 48h12l4-34v44h48V44l4 34h12l4-48-24-16c-4 8-36 8-40 0z" fill="${c}"/><g transform="translate(0 -4)">${logo}</g>`,
+  sticker:`<circle cx="50" cy="50" r="38" fill="${c}" stroke="#fff" stroke-width="5"/><g transform="translate(50 50) scale(1.8) translate(-50 -50)">${(c==='#ffe70e'||c==='#f4f4f4')?sun.replaceAll('#ffe70e','#111111'):sun.replaceAll('#ffe70e','#fff')}</g>`,
+  mug:`<path d="M72 34h8a10 10 0 0 1 0 28h-8" fill="none" stroke="${c}" stroke-width="7"/><rect x="22" y="22" width="52" height="58" rx="6" fill="${c}"/><g transform="translate(-2 2) scale(.9) translate(5 5)">${sun.replaceAll('#ffe70e','#fff')}</g>`,
+  bag:`<path d="M36 34v-6a14 14 0 0 1 28 0v6" fill="none" stroke="${c}" stroke-width="5"/><path d="M20 34h60l5 56H15z" fill="${c}"/><g transform="translate(0 8)">${sun.replaceAll('#ffe70e','#fff')}</g>`
+ };
+ return `<svg viewBox="0 0 100 100" role="img" aria-label="Ilustração do produto">${S[t]}</svg>`;
+}
+const R=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+let cat='Todos',cart={},orders=[];
+const cats=['Todos',...new Set(P.map(p=>p.cat))];
+const $=id=>document.getElementById(id);
+
+function renderFilters(){
+ $('filters').innerHTML=cats.map(c=>`<button class="chip" aria-pressed="${c===cat}" data-c="${c}">${c}</button>`).join('');
+ $('filters').querySelectorAll('button').forEach(b=>b.onclick=()=>{cat=b.dataset.c;renderFilters();renderGrid()});
+}
+function renderGrid(){
+ $('grid').innerHTML=P.filter(p=>cat==='Todos'||p.cat===cat).map(p=>`
+  <article class="card">
+   <div class="pic" style="--c:${p.cor}">${art(p.tipo,p.cor)}</div>
+   <div class="info"><h3>${p.nome}</h3><span class="price">${R(p.preco)}</span>
+    <div class="row"><select aria-label="Tamanho de ${p.nome}" id="t${p.id}">${p.tam.map(t=>`<option>${t}</option>`).join('')}</select>
+    <button class="add" data-id="${p.id}">Adicionar</button></div></div>
+  </article>`).join('');
+ $('grid').querySelectorAll('.add').forEach(b=>b.onclick=()=>{
+  const id=+b.dataset.id,k=id+'|'+$('t'+id).value;cart[k]=(cart[k]||0)+1;renderCart();open(true);
+ });
+}
+function lines(){return Object.entries(cart).map(([k,q])=>{const[id,t]=k.split('|'),p=P.find(x=>x.id==id);return{k,p,t,q}})}
+function renderCart(){
+ const L=lines(),tot=L.reduce((s,l)=>s+l.p.preco*l.q,0);
+ $('count').textContent=L.reduce((s,l)=>s+l.q,0);
+ $('total').textContent=R(tot);
+ $('items').innerHTML=L.length?L.map(l=>`<div class="item"><div>${l.p.nome}<small>Tamanho ${l.t} · ${R(l.p.preco)}</small></div>
+  <div class="qty"><button data-k="${l.k}" data-d="-1" aria-label="Diminuir">−</button> ${l.q} <button data-k="${l.k}" data-d="1" aria-label="Aumentar">+</button></div></div>`).join(''):'<p>Seu carrinho está vazio. Adicione um produto para começar.</p>';
+ $('items').querySelectorAll('.qty button').forEach(b=>b.onclick=()=>{
+  const k=b.dataset.k;cart[k]+=+b.dataset.d;if(cart[k]<=0)delete cart[k];renderCart();
+ });
+}
+function open(v){
+ $('drawer').classList.toggle('open',v);$('veil').classList.toggle('open',v);$('drawer').setAttribute('aria-hidden',!v);
+}
+$('openCart').onclick=()=>open(true);$('closeCart').onclick=()=>open(false);$('veil').onclick=()=>open(false);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')open(false)});
+
+$('form').onsubmit=async e=>{
+ e.preventDefault();
+ const L=lines(),btn=e.target.querySelector('button[type=submit]');
+ if(!L.length){$('done').innerHTML='<div class="ok">Adicione pelo menos um item antes de enviar.</div>';return}
+ const f=Object.fromEntries(new FormData(e.target)),tot=L.reduce((s,l)=>s+l.p.preco*l.q,0);
+ const items=L.map(l=>({produto:l.p.nome,tamanho:l.t,qtd:l.q,preco:l.p.preco}));
+ btn.disabled=true;btn.textContent='Enviando...';
+ const{data,error}=await sb.rpc('create_order',{p_nome:f.nome,p_whats:f.whats,p_email:f.email||null,p_obs:f.obs||null,p_items:items,p_total:tot});
+ btn.disabled=false;btn.textContent='Enviar pedido';
+ if(error){$('done').innerHTML='<div class="ok">Não foi possível enviar o pedido. Confira os dados e tente de novo.</div>';return}
+ const num='RL-'+String(data).padStart(4,'0');
+ $('done').innerHTML=`<div class="ok"><strong>Pedido ${num} realizado.</strong><p>Guarde este número. A equipe vai falar com você pelo WhatsApp para combinar o pagamento. A entrega é feita nos encontros do grupo.</p></div>`;
+ cart={};renderCart();e.target.reset();
+};
+renderFilters();renderGrid();renderCart();
+</script>
+</body>
+</html>
