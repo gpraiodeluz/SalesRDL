@@ -741,6 +741,213 @@
       opacity: 1
     }
 
+    .pic-btn {
+      all: unset;
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      cursor: pointer
+    }
+
+    .pic-btn:focus-visible,
+    .linkbtn:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: -3px
+    }
+
+    .linkbtn {
+      all: unset;
+      cursor: pointer
+    }
+
+    .linkbtn:hover {
+      text-decoration: underline
+    }
+
+    .rt {
+      font-size: .85rem;
+      color: var(--muted)
+    }
+
+    .stars {
+      color: #f5b301;
+      letter-spacing: 1px
+    }
+
+    .chk {
+      display: flex;
+      align-items: center;
+      gap: 8px
+    }
+
+    .chk input {
+      width: auto
+    }
+
+    dialog.pd {
+      width: min(880px, calc(100% - 24px))
+    }
+
+    .pdtop {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px
+    }
+
+    .pdgrid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px
+    }
+
+    .gal .main {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 12px;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      background: color-mix(in srgb, var(--c) 22%, var(--surface));
+      border: 1px solid var(--line)
+    }
+
+    .gal .main img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover
+    }
+
+    .gal .main svg {
+      width: 62%
+    }
+
+    .gal .nv {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 0;
+      background: rgba(0, 0, 0, .55);
+      color: #fff;
+      font-size: 1.3rem;
+      cursor: pointer
+    }
+
+    .gal .nv.l {
+      left: 8px
+    }
+
+    .gal .nv.r {
+      right: 8px
+    }
+
+    .thumbs {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      overflow-x: auto;
+      padding: 3px
+    }
+
+    .thumbs button {
+      all: unset;
+      flex: none;
+      width: 58px;
+      height: 58px;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      box-sizing: border-box
+    }
+
+    .thumbs button[aria-current=true] {
+      border-color: var(--ink)
+    }
+
+    .thumbs button:focus-visible {
+      outline: 3px solid var(--focus)
+    }
+
+    .thumbs img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block
+    }
+
+    .pdinfo {
+      display: grid;
+      gap: 12px;
+      align-content: start
+    }
+
+    .pdinfo .price {
+      font-size: 1.6rem
+    }
+
+    .det {
+      display: grid;
+      gap: 6px;
+      font-size: .95rem
+    }
+
+    .det p {
+      margin: 0
+    }
+
+    .kvr {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 8px
+    }
+
+    .kvr .k {
+      font-weight: 700
+    }
+
+    .rev {
+      border-top: 1px solid var(--line);
+      padding: 12px 0
+    }
+
+    .starin {
+      display: flex;
+      margin-top: 4px
+    }
+
+    .starin button {
+      all: unset;
+      cursor: pointer;
+      font-size: 1.9rem;
+      line-height: 1;
+      color: var(--line);
+      padding: 0 3px
+    }
+
+    .starin button.on {
+      color: #f5b301
+    }
+
+    .starin button:focus-visible {
+      outline: 3px solid var(--focus);
+      border-radius: 6px
+    }
+
+    @media (max-width:700px) {
+      .pdgrid {
+        grid-template-columns: 1fr
+      }
+
+      .kvr {
+        grid-template-columns: 90px 1fr
+      }
+    }
+
     @media (max-width:700px) {
       nav a {
         display: none
@@ -893,6 +1100,7 @@
   </aside>
 
   <dialog id="pixdlg" aria-label="Pagamento por PIX"></dialog>
+  <dialog id="proddlg" class="pd" aria-labelledby="pdtitle"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
@@ -940,7 +1148,7 @@
 
 
     let S = { store_open: 'true', notice: '', delivery_info: '', contact_whats: '', pix_type: 'phone', pix_key: '', pix_name: '', pix_city: 'Brasil' };
-    let P = [], cat = 'Todos', busca = '', ordem = 'rel', cart = store.get('rl_cart', {});
+    let P = [], RT = {}, firstLoad = true, cat = 'Todos', busca = '', ordem = 'rel', cart = store.get('rl_cart', {});
     const isOpen = () => S.store_open !== 'false';
     const waLink = (raw, text) => { let d = digits(raw); if (d.length <= 11) d = '55' + d; return `https://wa.me/${d}?text=${encodeURIComponent(text)}` };
     const orderNum = n => 'RL-' + String(n).padStart(4, '0');
@@ -981,20 +1189,27 @@
       if (ordem === 'asc') L.sort((a, b) => a.preco - b.preco); else if (ordem === 'desc') L.sort((a, b) => b.preco - a.preco); else if (ordem === 'nome') L.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       $('grid').innerHTML = L.length ? L.map(p => {
         const tot = Object.values(p.est).reduce((s, n) => s + n, 0), has = tot > 0;
-        return `<article class="card"><div class="pic" style="--c:${esc(p.cor)}">${p.img ? `<img src="${esc(p.img)}" alt="${esc(p.nome)}" loading="lazy">` : art(p.tipo, p.cor)}${has && tot <= 3 ? '<span class="badge">Últimas unidades</span>' : ''}</div>
-        <div class="info"><h3>${esc(p.nome)}</h3>${p.desc ? `<span class="desc">${esc(p.desc)}</span>` : ''}<span class="price">${R(p.preco)}</span>
+        const rt = RT[p.id];
+        return `<article class="card"><div class="pic" style="--c:${esc(p.cor)}"><button class="pic-btn" data-open="${p.id}" aria-label="Ver detalhes de ${esc(p.nome)}">${p.imgs[0] ? `<img src="${esc(p.imgs[0])}" alt="${esc(p.nome)}" loading="lazy">` : art(p.tipo, p.cor)}</button>${has && tot <= 3 ? '<span class="badge">Últimas unidades</span>' : ''}${p.imgs.length > 1 ? `<span class="badge" style="left:auto;right:10px">${p.imgs.length} fotos</span>` : ''}</div>
+        <div class="info"><h3><button class="linkbtn" data-open="${p.id}">${esc(p.nome)}</button></h3>${rt ? `<span class="rt"><span class="stars" aria-hidden="true">${stars(rt.average)}</span> ${rt.average.toFixed(1).replace('.', ',')} (${rt.total})</span>` : ''}${p.desc ? `<span class="desc">${esc(p.desc)}</span>` : ''}<span class="price">${R(p.preco)}</span>
         ${has ? `<div class="row"><select aria-label="Tamanho de ${esc(p.nome)}" id="t${p.id}">${opts(p)}</select><button class="add" data-id="${p.id}"${isOpen() ? '' : ' disabled'}>Adicionar</button></div>` : '<div class="row"><b>Esgotado</b></div>'}</div></article>`;
       }).join('') : `<p class="muted">${P.length ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto disponível no momento.'}</p>`;
     }
     async function loadProducts() {
       const { data, error } = await sb.from('products').select('*').order('id');
       if (error) { $('grid').innerHTML = '<p>Não foi possível carregar os produtos. Atualize a página.</p>'; return }
-      P = data.filter(d => d.active !== false).map(d => ({ id: d.id, nome: d.name, cat: d.category, preco: +d.price, cor: d.color, tipo: d.kind, est: d.stock || {}, img: d.image_url, desc: d.description }));
+      await loadRatings();
+      P = data.filter(d => d.active !== false).map(d => ({ id: d.id, nome: d.name, cat: d.category, preco: +d.price, cor: d.color, tipo: d.kind, est: d.stock || {}, imgs: (d.images && d.images.length) ? d.images : (d.image_url ? [d.image_url] : []), desc: d.description, details: d.details }));
       Object.keys(cart).forEach(k => {
         const [id, t] = k.split('|'), p = P.find(x => x.id == id), have = p ? (p.est[t] || 0) : 0;
         if (have < 1) delete cart[k]; else if (cart[k] > have) cart[k] = have;
       });
       renderFilters(); renderGrid(); renderCart();
+      if (firstLoad) { firstLoad = false; const m = location.hash.match(/^#produto-(\d+)$/); if (m) openProduct(+m[1]) }
+    }
+    async function loadRatings() {
+      const r = await sb.from('product_ratings').select('*'); RT = {};
+      (r.data || []).forEach(x => RT[x.product_id] = { average: Number(x.average), total: x.total });
     }
     async function loadSettings() {
       const { data } = await sb.from('settings').select('*');
@@ -1031,11 +1246,10 @@
     $('busca').addEventListener('input', e => { busca = e.target.value.trim(); renderGrid() });
     $('ordem').addEventListener('change', e => { ordem = e.target.value; renderGrid() });
     $('grid').addEventListener('click', e => {
+      const o = e.target.closest('[data-open]'); if (o) return openProduct(+o.dataset.open);
       const b = e.target.closest('.add'); if (!b) return;
-      if (!isOpen()) return toast('A loja está fechada no momento.');
-      const id = +b.dataset.id, t = $('t' + id).value, k = id + '|' + t, have = P.find(x => x.id === id).est[t];
-      if ((cart[k] || 0) >= have) return toast('Quantidade máxima em estoque atingida.');
-      cart[k] = (cart[k] || 0) + 1; renderCart(); toast('Adicionado ao carrinho');
+      const id = +b.dataset.id;
+      if (addToCart(id, $('t' + id).value)) toast('Adicionado ao carrinho');
     });
     $('items').addEventListener('click', e => {
       const b = e.target.closest('[data-k]'); if (!b) return;
@@ -1045,6 +1259,101 @@
     });
     $('whats').addEventListener('input', e => { e.target.value = fmtPhone(e.target.value) });
     $('twhats').addEventListener('input', e => { e.target.value = fmtPhone(e.target.value) });
+
+    /* ---------- detalhes do produto e avaliações ---------- */
+    const stars = n => { const r = Math.round(n); return '★'.repeat(r) + '☆'.repeat(5 - r) };
+    function addToCart(id, t) {
+      if (!isOpen()) { toast('A loja está fechada no momento.'); return false }
+      const k = id + '|' + t, have = P.find(x => x.id === id).est[t] || 0;
+      if (have < 1) { toast('Tamanho esgotado.'); return false }
+      if ((cart[k] || 0) >= have) { toast('Quantidade máxima em estoque atingida.'); return false }
+      cart[k] = (cart[k] || 0) + 1; renderCart(); return true;
+    }
+    function detailsHtml(t) {
+      if (!t) return '';
+      const rows = String(t).split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => {
+        const m = l.match(/^([^:]{1,30}):\s*(.+)$/);
+        return m ? `<div class="kvr"><span class="k">${esc(m[1])}</span><span>${esc(m[2])}</span></div>` : `<p>${esc(l)}</p>`;
+      }).join('');
+      return `<div class="det">${rows}</div>`;
+    }
+    let cur = null;
+    function renderGallery() {
+      const p = P.find(x => x.id === cur.id), n = p.imgs.length, i = cur.i;
+      $('gal').innerHTML = `<div class="main" style="--c:${esc(p.cor)}">${n ? `<img src="${esc(p.imgs[i])}" alt="${esc(p.nome)} - foto ${i + 1} de ${n}">` : art(p.tipo, p.cor)}${n > 1 ? '<button class="nv l" data-act="prev" aria-label="Foto anterior">‹</button><button class="nv r" data-act="next" aria-label="Próxima foto">›</button>' : ''}</div>
+        ${n > 1 ? `<div class="thumbs">${p.imgs.map((u, j) => `<button data-act="thumb" data-i="${j}" aria-label="Ver foto ${j + 1}"${j === i ? ' aria-current="true"' : ''}><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}`;
+    }
+    function renderRevList() {
+      const L = cur.reviews, avg = L.length ? L.reduce((s, r) => s + r.rating, 0) / L.length : 0;
+      $('revsum').innerHTML = L.length ? `<span class="stars" aria-hidden="true">${stars(avg)}</span> <b>${avg.toFixed(1).replace('.', ',')}</b> · ${L.length} avaliaç${L.length > 1 ? 'ões' : 'ão'}` : '<span class="muted">Ainda não há avaliações. Seja o primeiro!</span>';
+      $('revlist').innerHTML = L.map(r => `<div class="rev"><div><span class="stars" role="img" aria-label="Nota ${r.rating} de 5">${stars(r.rating)}</span> <b>${r.author ? esc(r.author) : 'Anônimo'}</b> <span class="muted">· ${new Date(r.created_at).toLocaleDateString('pt-BR')}</span></div>${r.comment ? `<p style="margin:6px 0 0;white-space:pre-line">${esc(r.comment)}</p>` : ''}</div>`).join('');
+    }
+    function paintStars() {
+      document.querySelectorAll('#starin button').forEach(b => { const v = +b.dataset.star; b.classList.toggle('on', v <= cur.rating); b.setAttribute('aria-checked', String(v === cur.rating)) });
+    }
+    function renderProduct() {
+      const p = P.find(x => x.id === cur.id), has = Object.values(p.est).some(n => n > 0), rated = store.get('rl_rev_' + p.id, false);
+      const form = `<form id="revform" class="stack" novalidate><b>Deixe sua avaliação</b>
+        <div>Sua nota<div class="starin" id="starin" role="radiogroup" aria-label="Sua nota">${[1, 2, 3, 4, 5].map(i => `<button type="button" role="radio" aria-checked="false" data-star="${i}" aria-label="${i} estrela${i > 1 ? 's' : ''}">★</button>`).join('')}</div></div>
+        <label class="chk"><input type="checkbox" name="anon" id="anon"> Avaliar de forma anônima</label>
+        <label id="namelbl">Seu nome<input name="nome" maxlength="60" autocomplete="name"></label>
+        <label>Comentário (opcional)<textarea name="comment" rows="3" maxlength="500" placeholder="Conte como foi sua experiência"></textarea></label>
+        <button class="btn" type="submit">Enviar avaliação</button><div id="revmsg" role="alert" class="muted"></div></form>`;
+      $('proddlg').innerHTML = `<div class="dlg"><div class="pdtop"><h2 id="pdtitle">${esc(p.nome)}</h2><button class="x" data-act="close" aria-label="Fechar">×</button></div>
+        <div class="pdgrid"><div class="gal" id="gal"></div>
+        <div class="pdinfo"><span class="price">${R(p.preco)}</span>${p.desc ? `<p style="margin:0">${esc(p.desc)}</p>` : ''}${detailsHtml(p.details)}
+        ${has ? `<div class="row"><select id="ms" aria-label="Tamanho">${opts(p)}</select><button class="btn" data-act="add"${isOpen() ? '' : ' disabled'}>Adicionar ao carrinho</button></div>` : '<b>Esgotado</b>'}</div></div>
+        <section aria-labelledby="revh"><h3 id="revh">Avaliações</h3><div id="revsum" style="margin:6px 0"></div><div id="revlist"></div>
+        ${rated ? '<p class="muted">Obrigado pela sua avaliação!</p>' : form}</section></div>`;
+      renderGallery(); renderRevList();
+    }
+    async function openProduct(id) {
+      if (!P.find(x => x.id === id)) return;
+      cur = { id, i: 0, rating: 0, reviews: [] };
+      renderProduct();
+      const dlg = $('proddlg'); if (dlg.showModal) { if (!dlg.open) dlg.showModal() } else dlg.setAttribute('open', '');
+      try { history.replaceState(null, '', '#produto-' + id) } catch { }
+      const { data } = await sb.from('reviews').select('*').eq('product_id', id).order('created_at', { ascending: false });
+      if (cur && cur.id === id) { cur.reviews = data || []; renderRevList() }
+    }
+    function closeProduct() {
+      const d = $('proddlg'); cur = null; d.close ? d.close() : d.removeAttribute('open');
+      try { history.replaceState(null, '', location.pathname + location.search) } catch { }
+    }
+    $('proddlg').addEventListener('click', e => {
+      const dlg = $('proddlg'); if (e.target === dlg) return closeProduct();
+      const b = e.target.closest('[data-act],[data-star]'); if (!b || !cur) return;
+      if (b.dataset.star) { cur.rating = +b.dataset.star; return paintStars() }
+      const p = P.find(x => x.id === cur.id), n = p.imgs.length, a = b.dataset.act;
+      if (a === 'close') closeProduct();
+      else if (a === 'prev') { cur.i = (cur.i + n - 1) % n; renderGallery() }
+      else if (a === 'next') { cur.i = (cur.i + 1) % n; renderGallery() }
+      else if (a === 'thumb') { cur.i = +b.dataset.i; renderGallery() }
+      else if (a === 'add') { if (addToCart(p.id, $('ms').value)) { closeProduct(); openCart(true) } }
+    });
+    $('proddlg').addEventListener('keydown', e => {
+      if (!cur || e.target.matches('input,select,textarea')) return;
+      const n = P.find(x => x.id === cur.id).imgs.length; if (n < 2) return;
+      if (e.key === 'ArrowLeft') { cur.i = (cur.i + n - 1) % n; renderGallery() } else if (e.key === 'ArrowRight') { cur.i = (cur.i + 1) % n; renderGallery() }
+    });
+    $('proddlg').addEventListener('close', () => { if (cur) { cur = null; try { history.replaceState(null, '', location.pathname + location.search) } catch { } } });
+    $('proddlg').addEventListener('change', e => { if (e.target.id === 'anon') $('namelbl').hidden = e.target.checked });
+    $('proddlg').addEventListener('submit', async e => {
+      e.preventDefault(); if (e.target.id !== 'revform' || !cur) return;
+      const f = e.target.elements, say = m => { $('revmsg').textContent = m };
+      if (!cur.rating) return say('Escolha uma nota de 1 a 5 estrelas.');
+      const anon = f.anon.checked, name = f.nome.value.trim();
+      if (!anon && name.length < 2) return say('Informe seu nome ou marque a opção anônima.');
+      const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true; say('');
+      const id = cur.id;
+      const { error } = await sb.rpc('add_review', { p_product: id, p_name: anon ? null : name, p_anonymous: anon, p_rating: cur.rating, p_comment: f.comment.value.trim() || null });
+      btn.disabled = false;
+      if (error) return say(/nota|nome|Muitas|indispon|Comentário/i.test(error.message) ? error.message + '.' : 'Não foi possível enviar a avaliação. Tente de novo.');
+      store.set('rl_rev_' + id, true); toast('Obrigado pela avaliação!');
+      const { data } = await sb.from('reviews').select('*').eq('product_id', id).order('created_at', { ascending: false });
+      if (cur && cur.id === id) { cur.reviews = data || []; renderProduct() }
+      await loadRatings(); renderGrid();
+    });
 
     /* ---------- PIX ---------- */
     function showPix(o) {

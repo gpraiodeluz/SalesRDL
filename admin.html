@@ -263,6 +263,28 @@
             max-width: 420px
         }
 
+        .stars {
+            color: #f5b301
+        }
+
+        .imgs {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 8px 0
+        }
+
+        .im {
+            display: grid;
+            gap: 4px;
+            justify-items: start
+        }
+
+        textarea {
+            width: 100%;
+            font: inherit
+        }
+
         .toast {
             position: fixed;
             left: 50%;
@@ -340,7 +362,7 @@
 
 
         const app = document.getElementById('app');
-        let rows = [], prods = [], S = {}, tab = 'pedidos', filtro = 'pendentes', busca = '', edit = {};
+        let rows = [], prods = [], revs = [], S = {}, tab = 'pedidos', filtro = 'pendentes', busca = '', edit = {};
 
         async function init() {
             const { data: { session } } = await sb.auth.getSession();
@@ -349,15 +371,16 @@
             await load();
         }
         async function load() {
-            const [o, p, s] = await Promise.all([sb.from('orders').select('*').order('created_at', { ascending: false }), sb.from('products').select('*').order('id'), sb.from('settings').select('*')]);
-            if (o.error || p.error || s.error) { app.textContent = 'Erro ao carregar: ' + (o.error || p.error || s.error).message + ' (a migração SQL foi executada?)'; return }
-            rows = o.data; prods = p.data; S = Object.fromEntries(s.data.map(r => [r.key, r.value])); draw();
+            const [o, p, s, r] = await Promise.all([sb.from('orders').select('*').order('created_at', { ascending: false }), sb.from('products').select('*').order('id'), sb.from('settings').select('*'), sb.from('reviews').select('*').order('created_at', { ascending: false })]);
+            const er = o.error || p.error || s.error || r.error;
+            if (er) { app.textContent = 'Erro ao carregar: ' + er.message + ' (as migrações SQL foram executadas?)'; return }
+            rows = o.data; prods = p.data; revs = r.data; S = Object.fromEntries(s.data.map(x => [x.key, x.value])); draw();
         }
         function draw() {
             app.innerHTML = `<div class="top"><div><h1>Painel</h1><small>${e(ADMIN)}</small></div><div class="bar" style="margin:0"><a class="b2" href="index.html" target="_blank" rel="noopener">Ver loja</a><button class="btn" data-a="out">Sair</button></div></div>
-      <div class="bar">${[['pedidos', 'Pedidos'], ['produtos', 'Produtos e estoque'], ['config', 'Configurações']].map(([k, v]) => `<button class="b2 ${tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${v}</button>`).join('')}</div>`
+      <div class="bar">${[['pedidos', 'Pedidos'], ['produtos', 'Produtos e estoque'], ['avaliacoes', 'Avaliações (' + revs.length + ')'], ['config', 'Configurações']].map(([k, v]) => `<button class="b2 ${tab === k ? 'on' : ''}" data-a="tab" data-v="${k}">${v}</button>`).join('')}</div>`
                 + (S.store_open === 'false' ? '<div class="box"><span class="tag bad">Loja fechada</span> Os clientes não conseguem fazer novos pedidos. Reabra em Configurações.</div>' : '')
-                + (tab === 'pedidos' ? ordersView() : tab === 'produtos' ? prodsView() : configView());
+                + (tab === 'pedidos' ? ordersView() : tab === 'produtos' ? prodsView() : tab === 'avaliacoes' ? reviewsView() : configView());
         }
 
         /* ---------- pedidos ---------- */
@@ -407,14 +430,18 @@
       <label>Cor<select name="cor">${Object.entries(COR).map(([k, v]) => `<option value="${k}"${k === p.color ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
       <label>Estoque por tamanho<input name="stock" required placeholder="P=5, M=3, G=2" value="${e(fmt(p.stock))}"></label>
       <label class="span2">Descrição curta (opcional)<input name="desc" maxlength="300" value="${e(p.description || '')}"></label>
-      <label class="span2">Foto (opcional, JPG/PNG/WebP)<input name="foto" type="file" accept="image/*"></label>
-      ${p.image_url ? `<div class="span2 prow"><img class="thumb" src="${e(p.image_url)}" alt=""><label class="chk"><input type="checkbox" name="rm_foto"> Remover a foto atual</label></div>` : ''}
+      <label class="span2">Detalhes do produto (material, tamanhos, medidas, cuidados)<textarea name="details" rows="5" maxlength="2000" placeholder="Material: 100% algodão&#10;Tamanhos: P ao GG&#10;Medidas (M): 70 cm de altura x 52 cm de largura&#10;Cuidados: lavar à mão, não usar alvejante">${e(p.details || '')}</textarea>
+      <small>Linhas no formato "Título: valor" aparecem organizadas na página do produto.</small></label>
+      <div class="span2"><b>Fotos (até 8, a primeira é a capa)</b>
+        <div class="imgs">${(p.images || []).map((u, i) => `<div class="im"><img class="thumb" src="${e(u)}" alt="Foto ${i + 1}">${i === 0 ? '<span class="tag ok">Capa</span>' : `<button type="button" class="b2" data-a="img-cover" data-i="${i}">Tornar capa</button>`}<button type="button" class="b2 red" data-a="img-del" data-i="${i}">Remover</button></div>`).join('') || '<small>Nenhuma foto ainda.</small>'}</div>
+        <input type="file" name="foto" accept="image/*" multiple data-foto${(p.images || []).length >= 8 ? ' disabled' : ''}>
+        <small>As fotos são enviadas assim que você as escolhe. Depois clique em Salvar.</small></div>
       <label class="chk span2"><input type="checkbox" name="active" ${p.active === false ? '' : 'checked'}> Visível na loja</label></div>
       <div class="bar"><button class="btn" type="submit" data-save>${p.id ? 'Salvar alterações' : 'Cadastrar produto'}</button>${p.id ? '<button class="b2" type="button" data-a="cancel">Cancelar edição</button>' : ''}</div>
       <small>Para itens sem tamanho use: Único=10</small></form>`
-                + (prods.map(x => `<div class="o"><div class="prow">${x.image_url ? `<img class="thumb" src="${e(x.image_url)}" alt="">` : '<div class="thumb"></div>'}
+                + (prods.map(x => `<div class="o"><div class="prow">${(x.images && x.images[0] || x.image_url) ? `<img class="thumb" src="${e(x.images && x.images[0] || x.image_url)}" alt="">` : '<div class="thumb"></div>'}
       <div style="flex:1"><div class="top"><b>${e(x.name)} ${x.active === false ? '<span class="tag warn">Oculto</span>' : ''}</b><b>${R(x.price)}</b></div>
-      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''}</small><div>Estoque: ${e(fmt(x.stock)) || '—'}</div></div></div>
+      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''} · ${(x.images || []).length} foto(s)</small><div>Estoque: ${e(fmt(x.stock)) || '—'}</div></div></div>
       <div class="bar" style="margin:0"><button class="b2" data-a="ed" data-id="${x.id}">Editar</button><button class="b2" data-a="vis" data-id="${x.id}">${x.active === false ? 'Mostrar na loja' : 'Ocultar da loja'}</button><button class="b2" data-a="rep" data-id="${x.id}">Repor estoque</button><button class="b2" data-a="zero" data-id="${x.id}">Zerar estoque</button><button class="b2 red" data-a="delp" data-id="${x.id}">Excluir</button></div></div>`).join('') || '<p class="m">Nenhum produto cadastrado ainda.</p>');
         }
         async function shrink(file, max = 900) {
@@ -432,6 +459,32 @@
         async function removePhoto(url) {
             const m = String(url || '').match(/product-images\/([^?]+)$/);
             if (m) { try { await sb.storage.from('product-images').remove([decodeURIComponent(m[1])]) } catch { } }
+        }
+
+        /* ---------- avaliações ---------- */
+        function reviewsView() {
+            return `<div class="m" style="margin:10px 0">${revs.length} avaliação(ões). Avaliações ocultas não aparecem na loja.</div>` + (revs.map(r => {
+                const p = prods.find(x => x.id === r.product_id);
+                return `<div class="o"><div class="top"><b>${e(p ? p.name : 'Produto removido')}</b><small>${new Date(r.created_at).toLocaleString('pt-BR')}</small></div>
+        <div><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5 - r.rating)}</span> · ${r.author ? e(r.author) : '<i>Anônimo</i>'} ${r.hidden ? '<span class="tag warn">Oculta</span>' : ''}</div>
+        ${r.comment ? `<div style="white-space:pre-line">${e(r.comment)}</div>` : ''}
+        <div class="bar" style="margin:0"><button class="b2" data-a="rvis" data-id="${r.id}">${r.hidden ? 'Mostrar na loja' : 'Ocultar'}</button><button class="b2 red" data-a="rdel" data-id="${r.id}">Excluir</button></div></div>`;
+            }).join('') || '<p class="m">Nenhuma avaliação ainda.</p>');
+        }
+
+        /* ---------- edição de produto: fotos ---------- */
+        function snapEdit() {
+            const f = app.querySelector('[data-pf]'); if (!f) return; const g = n => f.elements[n];
+            Object.assign(edit, { name: g('nome').value, category: g('cat').value, price: g('preco').value, kind: g('kind').value, color: g('cor').value, stock: parse(g('stock').value), description: g('desc').value, details: g('details').value, active: g('active').checked });
+        }
+        async function discardAdded() { for (const u of (edit.added || [])) await removePhoto(u); edit = {} }
+        async function uploadMany(inp) {
+            const files = [...inp.files]; if (!files.length) return;
+            snapEdit(); edit.images = edit.images || []; edit.added = edit.added || [];
+            const room = 8 - edit.images.length; if (files.length > room) toast('Limite de 8 fotos: enviando só ' + room + '.');
+            toast('Enviando fotos...');
+            for (const f of files.slice(0, room)) { try { const u = await uploadPhoto(f); edit.images.push(u); edit.added.push(u) } catch (err) { toast('Não foi possível enviar a foto: ' + err.message) } }
+            snapEdit(); draw();
         }
 
         /* ---------- configurações ---------- */
@@ -460,21 +513,25 @@
         }
 
         /* ---------- ações ---------- */
-        async function run(q, msg) { const { error } = await q; if (error) toast((msg || 'Erro') + ': ' + error.message); await load() }
+        async function run(q, msg) { const { error } = await q; if (error) toast((msg || 'Erro') + ': ' + error.message); await load(); return !error }
         app.addEventListener('click', async ev => {
             const b = ev.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, id = b.dataset.id, p = prods.find(x => x.id == id);
             if (a === 'in') sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.href } });
             else if (a === 'out') { await sb.auth.signOut(); location.reload() }
-            else if (a === 'tab') { tab = b.dataset.v; draw() }
+            else if (a === 'tab') { if ((edit.added || []).length) await discardAdded(); tab = b.dataset.v; draw() }
             else if (a === 'csv') csv();
             else if (a === 'next') { const o = rows.find(x => x.id === id); run(sb.from('orders').update({ status: NEXT[o.status] }).eq('id', id), 'Não foi possível atualizar') }
             else if (a === 'delo') { if (confirm('Excluir este pedido cancelado de vez?')) run(sb.from('orders').delete().eq('id', id)) }
-            else if (a === 'ed') { edit = p; draw(); scrollTo(0, 0) }
-            else if (a === 'cancel') { edit = {}; draw() }
+            else if (a === 'ed') { if ((edit.added || []).length) await discardAdded(); edit = { ...p, images: [...(p.images && p.images.length ? p.images : (p.image_url ? [p.image_url] : []))], added: [], removed: [] }; draw(); scrollTo(0, 0) }
+            else if (a === 'cancel') { await discardAdded(); draw() }
+            else if (a === 'img-del') { snapEdit(); const u = edit.images.splice(+b.dataset.i, 1)[0]; if ((edit.added || []).includes(u)) { edit.added = edit.added.filter(x => x !== u); await removePhoto(u) } else edit.removed = (edit.removed || []).concat(u); draw() }
+            else if (a === 'img-cover') { snapEdit(); const u = edit.images.splice(+b.dataset.i, 1)[0]; edit.images.unshift(u); draw() }
+            else if (a === 'rvis') { const r = revs.find(x => x.id == id); run(sb.from('reviews').update({ hidden: !r.hidden }).eq('id', id)) }
+            else if (a === 'rdel') { if (confirm('Excluir esta avaliação de vez?')) run(sb.from('reviews').delete().eq('id', id)) }
             else if (a === 'vis') run(sb.from('products').update({ active: p.active === false }).eq('id', id))
             else if (a === 'zero') { if (confirm('Zerar o estoque de ' + p.name + '?')) run(sb.from('products').update({ stock: Object.fromEntries(Object.keys(p.stock).map(k => [k, 0])) }).eq('id', id)) }
             else if (a === 'rep') { const n = parseInt(prompt('Quantas unidades repor em CADA tamanho de ' + p.name + '?', '5')); if (n > 0) run(sb.from('products').update({ stock: Object.fromEntries(Object.entries(p.stock).map(([k, v]) => [k, v + n])) }).eq('id', id)) }
-            else if (a === 'delp') { if (confirm('Excluir ' + p.name + '? Pedidos antigos continuam guardados.')) { await removePhoto(p.image_url); run(sb.from('products').delete().eq('id', id)) } }
+            else if (a === 'delp') { if (confirm('Excluir ' + p.name + '? Pedidos antigos continuam guardados.')) { for (const u of (p.images || []).concat(p.image_url ? [p.image_url] : [])) await removePhoto(u); run(sb.from('products').delete().eq('id', id)) } }
             else if (a === 'testqr') testQr();
         });
         function testQr() {
@@ -493,7 +550,8 @@
         });
         app.addEventListener('change', ev => {
             const t = ev.target;
-            if (t.matches('[data-f]')) { filtro = t.value; draw() }
+            if (t.matches('[data-foto]')) uploadMany(t);
+            else if (t.matches('[data-f]')) { filtro = t.value; draw() }
             else if (t.matches('[data-st]')) {
                 if (t.value === 'cancelado' && !confirm('Cancelar o pedido? Depois disso ele não poderá mais ser alterado e o estoque volta.')) { draw(); return }
                 run(sb.from('orders').update({ status: t.value }).eq('id', t.dataset.st), 'Não foi possível atualizar');
@@ -503,17 +561,14 @@
             const form = ev.target;
             if (form.matches('[data-pf]')) {
                 ev.preventDefault();
-                const f = Object.fromEntries(new FormData(form)), st = parse(f.stock), file = form.elements.foto.files[0], btn = form.querySelector('[data-save]');
+                const f = Object.fromEntries(new FormData(form)), st = parse(f.stock), btn = form.querySelector('[data-save]');
                 if (!Object.keys(st).length) return toast('Informe o estoque, por exemplo: P=5, M=3');
                 btn.disabled = true; btn.textContent = 'Salvando...';
-                let image_url = edit.image_url || null;
-                try {
-                    if (f.rm_foto) { await removePhoto(image_url); image_url = null }
-                    if (file) { const old = image_url, url = await uploadPhoto(file); if (old) await removePhoto(old); image_url = url }
-                } catch (err) { toast('Não foi possível enviar a foto: ' + err.message); btn.disabled = false; btn.textContent = 'Salvar'; return }
-                const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st, description: (f.desc || '').trim() || null, active: !!f.active, image_url };
+                const images = edit.images || [], removed = edit.removed || [];
+                const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st, description: (f.desc || '').trim() || null, details: (f.details || '').trim() || null, active: !!f.active, images, image_url: images[0] || null };
                 const q = edit.id ? sb.from('products').update(d).eq('id', edit.id) : sb.from('products').insert(d);
-                edit = {}; await run(q, 'Não foi possível salvar'); toast('Produto salvo');
+                const ok = await run(q, 'Não foi possível salvar');
+                if (ok) { for (const u of removed) await removePhoto(u); edit = {}; draw(); toast('Produto salvo') }
             } else if (form.matches('[data-cf]')) {
                 ev.preventDefault();
                 const f = Object.fromEntries(new FormData(form));
