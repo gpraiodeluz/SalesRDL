@@ -1,67 +1,244 @@
 <!DOCTYPE html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Painel de pedidos - Raio de Luz</title>
-<style>
-:root{--bg:#fafafa;--s:#fff;--ink:#111;--m:#5c5c5c;--l:#e3e3e3;--sun:#ffe70e}
-@media(prefers-color-scheme:dark){:root{--bg:#111;--s:#1c1c1c;--ink:#f5f5f5;--m:#b5b5b5;--l:#333}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
-main{max-width:900px;margin:0 auto;padding:20px}h1{margin:0 0 4px}
-button,select{font:inherit;color:inherit}
-.btn{background:var(--sun);color:#111;border:0;border-radius:99px;padding:9px 18px;font-weight:700;cursor:pointer}
-.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:16px 0}
-select{border:1.5px solid var(--l);background:var(--s);border-radius:10px;padding:8px}
-.box,.o{background:var(--s);border:1px solid var(--l);border-radius:14px;padding:14px;margin-bottom:12px}
-.o{display:grid;gap:6px}.top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
-small,.m{color:var(--m)}a{color:inherit}
-</style></head><body><main id="app">Carregando...</main>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script>
-const SUPABASE_URL="https://hwsaorlbexcmzgajhgps.supabase.co",SUPABASE_ANON_KEY="sb_publishable_79EGS7VroM7tfzWJItj55A_ZdGnhg6P",ADMIN="gp.raiodeluz@gmail.com";
-const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-const ST={pedido_realizado:'Pedido realizado',pagamento_confirmado:'Pagamento confirmado',preparando:'Preparando',pronto_para_entrega:'Pronto para entrega',entregue:'Entregue',cancelado:'Cancelado'};
-const DONE=['entregue','cancelado'];
-const e=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const R=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-const app=document.getElementById('app');let rows=[],filtro='pendentes';
-async function init(){
- const{data:{session}}=await sb.auth.getSession();
- if(!session){app.innerHTML='<h1>Painel de pedidos</h1><p>Entre com a conta Google do grupo.</p><button class="btn" id="in">Entrar com Google</button>';
-  document.getElementById('in').onclick=()=>sb.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.href}});return}
- if(session.user.email!==ADMIN){app.innerHTML=`<h1>Acesso negado</h1><p>${e(session.user.email)} não tem permissão. Use ${ADMIN}.</p><button class="btn" id="out">Sair</button>`;
-  document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload()};return}
- await load();
-}
-async function load(){
- const{data,error}=await sb.from('orders').select('*').order('created_at',{ascending:false});
- if(error){app.textContent='Erro ao carregar pedidos: '+error.message;return}
- rows=data;draw();
-}
-function draw(){
- const vis=rows.filter(o=>filtro==='todos'||(filtro==='pendentes'?!DONE.includes(o.status):o.status===filtro));
- const sep={};rows.filter(o=>!DONE.includes(o.status)).forEach(o=>o.items.forEach(i=>{const k=`${i.produto} (${i.tamanho})`;sep[k]=(sep[k]||0)+i.qtd}));
- app.innerHTML=`<div class="top"><div><h1>Pedidos</h1><small>${e(ADMIN)}</small></div><button class="btn" id="out">Sair</button></div>
- <div class="box"><b>Para separar (pedidos pendentes)</b><br>${Object.keys(sep).length?Object.entries(sep).map(([k,q])=>`${q}x ${e(k)}`).join('<br>'):'<span class="m">Nada pendente.</span>'}</div>
- <div class="bar"><select id="f"><option value="pendentes">Pendentes</option><option value="todos">Todos</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
- <button class="btn" id="csv">Baixar CSV</button><span class="m">${vis.length} pedido(s)</span></div>`+
- (vis.map(o=>`<div class="o"><div class="top"><b>RL-${String(o.number).padStart(4,'0')} · ${e(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('pt-BR')}</small></div>
- <div>${o.items.map(i=>`${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})`).join('<br>')}</div>
- <div>Total: <b>${R(o.total)}</b> · <a href="https://wa.me/55${e(o.whatsapp.replace(/\D/g,''))}" target="_blank" rel="noopener">${e(o.whatsapp)}</a></div>
- ${o.notes?`<small>Obs: ${e(o.notes)}</small>`:''}
- <select data-id="${o.id}">${Object.entries(ST).map(([k,v])=>`<option value="${k}"${k===o.status?' selected':''}>${v}</option>`).join('')}</select></div>`).join('')||'<p class="m">Nenhum pedido neste filtro.</p>');
- document.getElementById('f').value=filtro;
- document.getElementById('f').onchange=ev=>{filtro=ev.target.value;draw()};
- document.getElementById('out').onclick=async()=>{await sb.auth.signOut();location.reload()};
- document.getElementById('csv').onclick=()=>csv(vis);
- app.querySelectorAll('.o select').forEach(s=>s.onchange=async()=>{
-  const{error}=await sb.from('orders').update({status:s.value}).eq('id',s.dataset.id);
-  if(error){alert('Não foi possível atualizar: '+error.message);return}
-  rows.find(o=>o.id===s.dataset.id).status=s.value;draw();
- });
-}
-function csv(v){
- const q=x=>'"'+String(x??'').replace(/"/g,'""')+'"';
- const t=['Pedido;Data;Nome;WhatsApp;Itens;Total;Status;Obs',...v.map(o=>[ 'RL-'+o.number,new Date(o.created_at).toLocaleString('pt-BR'),o.customer_name,o.whatsapp,o.items.map(i=>`${i.qtd}x ${i.produto} (${i.tamanho})`).join(' | '),o.total,ST[o.status],o.notes].map(q).join(';'))].join('\n');
- const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+t],{type:'text/csv'}));a.download='pedidos.csv';a.click();
-}
-init();
-</script></body></html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Painel - Raio de Luz</title>
+    <style>
+        :root {
+            --bg: #fafafa;
+            --s: #fff;
+            --ink: #111;
+            --m: #5c5c5c;
+            --l: #e3e3e3;
+            --sun: #ffe70e
+        }
+
+        @media(prefers-color-scheme:dark) {
+            :root {
+                --bg: #111;
+                --s: #1c1c1c;
+                --ink: #f5f5f5;
+                --m: #b5b5b5;
+                --l: #333
+            }
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 16px/1.5 system-ui, sans-serif
+        }
+
+        main {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px
+        }
+
+        h1 {
+            margin: 0 0 4px
+        }
+
+        button,
+        select,
+        input {
+            font: inherit;
+            color: inherit
+        }
+
+        .btn {
+            background: var(--sun);
+            color: #111;
+            border: 0;
+            border-radius: 99px;
+            padding: 8px 16px;
+            font-weight: 700;
+            cursor: pointer
+        }
+
+        .b2 {
+            background: var(--s);
+            border: 1.5px solid var(--l);
+            border-radius: 99px;
+            padding: 6px 14px;
+            cursor: pointer
+        }
+
+        .b2.on {
+            background: var(--ink);
+            color: var(--bg)
+        }
+
+        .b2.red {
+            color: #d33;
+            border-color: #d33
+        }
+
+        .bar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin: 14px 0
+        }
+
+        select,
+        input {
+            border: 1.5px solid var(--l);
+            background: var(--s);
+            border-radius: 10px;
+            padding: 8px
+        }
+
+        .box,
+        .o {
+            background: var(--s);
+            border: 1px solid var(--l);
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px
+        }
+
+        .o {
+            display: grid;
+            gap: 6px
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        .fg {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px
+        }
+
+        label {
+            display: grid;
+            gap: 3px;
+            font-size: .85rem;
+            font-weight: 600
+        }
+
+        small,
+        .m {
+            color: var(--m)
+        }
+
+        a {
+            color: inherit
+        }
+    </style>
+</head>
+
+<body>
+    <main id="app">Carregando...</main>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+    <script>
+        const SUPABASE_URL = "https://hwsaorlbexcmzgajhgps.supabase.co", SUPABASE_ANON_KEY = "sb_publishable_79EGS7VroM7tfzWJItj55A_ZdGnhg6P", ADMIN = "gp.raiodeluz@gmail.com";
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const ST = { pedido_realizado: 'Pedido realizado', pagamento_confirmado: 'Pagamento confirmado', preparando: 'Preparando', pronto_para_entrega: 'Pronto para entrega', entregue: 'Entregue', cancelado: 'Cancelado' };
+        const KIND = { tee: 'Camiseta', long: 'Blusa', sticker: 'Adesivo', mug: 'Caneca', bag: 'Ecobag', keychain: 'Chaveiro' };
+        const COR = { '#ffe70e': 'Amarelo', '#111111': 'Preto', '#f4f4f4': 'Branco' };
+        const DONE = ['entregue', 'cancelado'];
+        const e = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const R = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const fmt = st => Object.entries(st || {}).map(([k, v]) => `${k}=${v}`).join(', ');
+        const parse = t => t.split(',').map(x => x.trim().split('=')).filter(p => p[0]).reduce((o, [k, v]) => (o[k.trim()] = Math.max(0, parseInt(v) || 0), o), {});
+        const app = document.getElementById('app'); let rows = [], prods = [], tab = 'pedidos', filtro = 'pendentes', edit = {};
+        async function init() {
+            const { data: { session } } = await sb.auth.getSession();
+            if (!session) { app.innerHTML = '<h1>Painel</h1><p>Entre com a conta Google do grupo.</p><button class="btn" data-a="in">Entrar com Google</button>'; return }
+            if (session.user.email !== ADMIN) { app.innerHTML = `<h1>Acesso negado</h1><p>${e(session.user.email)} não tem permissão. Use ${ADMIN}.</p><button class="btn" data-a="out">Sair</button>`; return }
+            await load();
+        }
+        async function load() {
+            const [o, p] = await Promise.all([sb.from('orders').select('*').order('created_at', { ascending: false }), sb.from('products').select('*').order('id')]);
+            if (o.error || p.error) { app.textContent = 'Erro ao carregar: ' + (o.error || p.error).message; return }
+            rows = o.data; prods = p.data; draw();
+        }
+        function draw() {
+            app.innerHTML = `<div class="top"><div><h1>Painel</h1><small>${e(ADMIN)}</small></div><button class="btn" data-a="out">Sair</button></div>
+ <div class="bar"><button class="b2 ${tab === 'pedidos' ? 'on' : ''}" data-a="tab" data-v="pedidos">Pedidos</button><button class="b2 ${tab === 'produtos' ? 'on' : ''}" data-a="tab" data-v="produtos">Produtos e estoque</button></div>` + (tab === 'pedidos' ? ordersView() : prodsView());
+        }
+        function ordersView() {
+            const vis = rows.filter(o => filtro === 'todos' || (filtro === 'pendentes' ? !DONE.includes(o.status) : o.status === filtro));
+            const sep = {}; rows.filter(o => !DONE.includes(o.status)).forEach(o => o.items.forEach(i => { const k = `${i.produto} (${i.tamanho})`; sep[k] = (sep[k] || 0) + i.qtd }));
+            return `<div class="box"><b>Para separar (pedidos pendentes)</b><br>${Object.keys(sep).length ? Object.entries(sep).map(([k, q]) => `${q}x ${e(k)}`).join('<br>') : '<span class="m">Nada pendente.</span>'}</div>
+ <div class="bar"><select data-f>${['pendentes', 'todos', ...Object.keys(ST)].map(k => `<option value="${k}"${k === filtro ? ' selected' : ''}>${ST[k] || k[0].toUpperCase() + k.slice(1)}</option>`).join('')}</select>
+ <button class="btn" data-a="csv">Baixar CSV</button><span class="m">${vis.length} pedido(s)</span></div>` +
+                (vis.map(o => {
+                    const c = o.status === 'cancelado'; return `<div class="o"><div class="top"><b>RL-${String(o.number).padStart(4, '0')} · ${e(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('pt-BR')}</small></div>
+ <div>${o.items.map(i => `${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})`).join('<br>')}</div>
+ <div>Total: <b>${R(o.total)}</b> · <a href="https://wa.me/55${e(o.whatsapp.replace(/\D/g, ''))}" target="_blank" rel="noopener">${e(o.whatsapp)}</a></div>
+ ${o.notes ? `<small>Obs: ${e(o.notes)}</small>` : ''}
+ <div class="bar" style="margin:0"><select data-st="${o.id}"${c ? ' disabled' : ''}>${Object.entries(ST).map(([k, v]) => `<option value="${k}"${k === o.status ? ' selected' : ''}>${v}</option>`).join('')}</select>
+ ${c ? `<button class="b2 red" data-a="delo" data-id="${o.id}">Excluir pedido</button><small>Cancelado: não pode mais ser alterado.</small>` : ''}</div></div>`
+                }).join('') || '<p class="m">Nenhum pedido neste filtro.</p>');
+        }
+        function prodsView() {
+            const p = edit;
+            return `<form class="box" data-pf><b>${p.id ? 'Editar produto' : 'Novo produto'}</b><div class="fg" style="margin-top:10px">
+ <label>Nome<input name="nome" required value="${e(p.name)}"></label>
+ <label>Categoria<input name="cat" required list="cats" value="${e(p.category || '')}"><datalist id="cats">${[...new Set(prods.map(x => x.category))].map(c => `<option value="${e(c)}">`).join('')}</datalist></label>
+ <label>Preço (R$)<input name="preco" type="number" step="0.01" min="0" required value="${e(p.price)}"></label>
+ <label>Tipo<select name="kind">${Object.entries(KIND).map(([k, v]) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+ <label>Cor<select name="cor">${Object.entries(COR).map(([k, v]) => `<option value="${k}"${k === p.color ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+ <label>Estoque por tamanho<input name="stock" required placeholder="P=5, M=3, G=2" value="${e(fmt(p.stock))}"></label></div>
+ <div class="bar"><button class="btn" type="submit">${p.id ? 'Salvar alterações' : 'Cadastrar produto'}</button>${p.id ? '<button class="b2" type="button" data-a="cancel">Cancelar edição</button>' : ''}</div>
+ <small>Para itens sem tamanho use: Único=10</small></form>`+
+                (prods.map(x => `<div class="o"><div class="top"><b>${e(x.name)}</b><b>${R(x.price)}</b></div>
+ <small>${e(x.category)} · ${KIND[x.kind]} · ${COR[x.color] || ''}</small><div>Estoque: ${e(fmt(x.stock)) || '—'}</div>
+ <div class="bar" style="margin:0"><button class="b2" data-a="ed" data-id="${x.id}">Editar</button><button class="b2" data-a="rep" data-id="${x.id}">Repor estoque</button><button class="b2" data-a="zero" data-id="${x.id}">Zerar estoque</button><button class="b2 red" data-a="delp" data-id="${x.id}">Excluir</button></div></div>`).join('') || '<p class="m">Nenhum produto cadastrado ainda.</p>');
+        }
+        async function run(q, msg) { const { error } = await q; if (error) alert((msg || 'Erro') + ': ' + error.message); await load() }
+        app.addEventListener('click', async ev => {
+            const b = ev.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, id = b.dataset.id, p = prods.find(x => x.id == id);
+            if (a === 'in') sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.href } });
+            else if (a === 'out') { await sb.auth.signOut(); location.reload() }
+            else if (a === 'tab') { tab = b.dataset.v; draw() }
+            else if (a === 'csv') csv();
+            else if (a === 'delo') { if (confirm('Excluir este pedido cancelado de vez?')) run(sb.from('orders').delete().eq('id', id)) }
+            else if (a === 'ed') { edit = p; draw(); scrollTo(0, 0) }
+            else if (a === 'cancel') { edit = {}; draw() }
+            else if (a === 'zero') { if (confirm('Zerar o estoque de ' + p.name + '?')) run(sb.from('products').update({ stock: Object.fromEntries(Object.keys(p.stock).map(k => [k, 0])) }).eq('id', id)) }
+            else if (a === 'rep') { const n = parseInt(prompt('Quantas unidades repor em CADA tamanho de ' + p.name + '?', '5')); if (n > 0) run(sb.from('products').update({ stock: Object.fromEntries(Object.entries(p.stock).map(([k, v]) => [k, v + n])) }).eq('id', id)) }
+            else if (a === 'delp') { if (confirm('Excluir ' + p.name + '? Pedidos antigos continuam guardados.')) run(sb.from('products').delete().eq('id', id)) }
+        });
+        app.addEventListener('change', ev => {
+            const t = ev.target;
+            if (t.matches('[data-f]')) { filtro = t.value; draw() }
+            else if (t.matches('[data-st]')) {
+                if (t.value === 'cancelado' && !confirm('Cancelar o pedido? Depois disso ele não poderá mais ser alterado e o estoque volta.')) { draw(); return }
+                run(sb.from('orders').update({ status: t.value }).eq('id', t.dataset.st), 'Não foi possível atualizar');
+            }
+        });
+        app.addEventListener('submit', async ev => {
+            if (!ev.target.matches('[data-pf]')) return; ev.preventDefault();
+            const f = Object.fromEntries(new FormData(ev.target)), st = parse(f.stock);
+            if (!Object.keys(st).length) { alert('Informe o estoque, por exemplo: P=5, M=3'); return }
+            const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st };
+            const q = edit.id ? sb.from('products').update(d).eq('id', edit.id) : sb.from('products').insert(d);
+            edit = {}; await run(q, 'Não foi possível salvar');
+        });
+        function csv() {
+            const v = rows.filter(o => filtro === 'todos' || (filtro === 'pendentes' ? !DONE.includes(o.status) : o.status === filtro)), q = x => '"' + String(x ?? '').replace(/"/g, '""') + '"';
+            const t = ['Pedido;Data;Nome;WhatsApp;Itens;Total;Status;Obs', ...v.map(o => ['RL-' + o.number, new Date(o.created_at).toLocaleString('pt-BR'), o.customer_name, o.whatsapp, o.items.map(i => `${i.qtd}x ${i.produto} (${i.tamanho})`).join(' | '), o.total, ST[o.status], o.notes].map(q).join(';'))].join('\n');
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + t], { type: 'text/csv' })); a.download = 'pedidos.csv'; a.click();
+        }
+        init();
+    </script>
+</body>
+
+</html>
