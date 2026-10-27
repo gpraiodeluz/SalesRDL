@@ -73,8 +73,20 @@
     const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const R = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const num = n => 'RL-' + String(n).padStart(4, '0');
-    const fmt = st => Object.entries(st || {}).map(([k, v]) => `${k}=${v}`).join(', ');
-    const parse = t => t.split(',').map(x => x.trim().split('=')).filter(p => p[0]).reduce((o, [k, v]) => (o[k.trim()] = Math.max(0, parseInt(v) || 0), o), {});
+    // estoque <-> texto. Sem cor: "P=5, M=3". Com cor, uma linha por cor: "Preto: P=5, M=3"
+    const fmt = st => {
+      const g = {}; Object.entries(st || {}).forEach(([k, v]) => { const x = splitKey(k); (g[x.color] = g[x.color] || []).push([x.size, v]) });
+      return Object.keys(g).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(c => (c ? c + ': ' : '') + g[c].sort((a, b) => sizeCmp(a[0], b[0])).map(([s, v]) => `${s}=${v}`).join(', ')).join('\n');
+    };
+    const parse = t => {
+      const o = {}, clean = x => x.replace(/[|]/g, '').trim();
+      String(t).split(/\r?\n/).forEach(line => {
+        line = line.trim(); if (!line) return;
+        const m = line.match(/^([^:=,]+):\s*(.*)$/), color = m ? clean(m[1]) : '', rest = m ? m[2] : line;
+        rest.split(',').forEach(x => { const [k, v] = x.trim().split('='), size = clean(k || ''); if (size) o[variantKey(color, size)] = Math.max(0, parseInt(v) || 0) });
+      });
+      return o;
+    };
     let toastT;
     function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600) }
 
@@ -107,6 +119,12 @@ function qrSvg(text) {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
   return `<svg viewBox="0 0 ${n + m * 2} ${n + m * 2}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="QR Code PIX" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
 }
+/* variantes: o estoque guarda chaves "Tamanho" ou "Cor / Tamanho" */
+const SIZE_ORDER = ['PP', 'P', 'M', 'G', 'GG', 'XG', 'EG', 'G1', 'G2', 'G3', 'G4', 'G5'];
+const sizeRank = s => { const u = String(s).toUpperCase(), i = SIZE_ORDER.indexOf(u); if (i >= 0) return i; const n = parseFloat(u); return isNaN(n) ? 500 : 100 + n };
+const sizeCmp = (a, b) => sizeRank(a) - sizeRank(b) || String(a).localeCompare(String(b), 'pt-BR');
+const splitKey = k => { const i = String(k).indexOf(' / '); return i < 0 ? { color: '', size: String(k) } : { color: k.slice(0, i), size: k.slice(i + 3) } };
+const variantKey = (c, s) => c ? c + ' / ' + s : s;
 /*PIX-END*/
 
 
@@ -176,8 +194,8 @@ function qrSvg(text) {
       <label>Categoria<input name="cat" required list="cats" value="${e(p.category || '')}"><datalist id="cats">${[...new Set(prods.map(x => x.category))].map(c => `<option value="${e(c)}">`).join('')}</datalist></label>
       <label>Preço (R$)<input name="preco" type="number" step="0.01" min="0" required value="${e(p.price)}"></label>
       <label>Tipo (ilustração sem foto)<select name="kind">${Object.entries(KIND).map(([k, v]) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-      <label>Cor<select name="cor">${Object.entries(COR).map(([k, v]) => `<option value="${k}"${k === p.color ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-      <label>Estoque por tamanho<input name="stock" required placeholder="P=5, M=3, G=2" value="${e(fmt(p.stock))}"></label>
+      <label>Cor da ilustração (sem foto)<select name="cor">${Object.entries(COR).map(([k, v]) => `<option value="${k}"${k === p.color ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="span2">Estoque (por tamanho; com cores, uma linha por cor)<textarea class="mono" name="stock" required rows="3" placeholder="Preto: P=5, M=3, G=2&#10;Branco: P=2, M=4">${e(fmt(p.stock))}</textarea></label>
       <label class="span2">Descrição curta (opcional)<input name="desc" maxlength="300" value="${e(p.description || '')}"></label>
       <label class="span2">Detalhes do produto (material, tamanhos, medidas, cuidados)<textarea name="details" rows="5" maxlength="2000" placeholder="Material: 100% algodão&#10;Tamanhos: P ao GG&#10;Medidas (M): 70 cm de altura x 52 cm de largura&#10;Cuidados: lavar à mão, não usar alvejante">${e(p.details || '')}</textarea>
       <small>Linhas no formato "Título: valor" aparecem organizadas na página do produto.</small></label>
@@ -190,10 +208,10 @@ function qrSvg(text) {
         <small>As fotos são enviadas assim que você as escolhe. Depois clique em Salvar.</small></div>
       <label class="chk span2"><input type="checkbox" name="active" ${p.active === false ? '' : 'checked'}> Visível na loja</label></div>
       <div class="bar"><button class="btn" type="submit" data-save>${p.id ? 'Salvar alterações' : 'Cadastrar produto'}</button>${p.id ? '<button class="b2" type="button" data-a="cancel">Cancelar edição</button>' : ''}</div>
-      <small>Para itens sem tamanho use: Único=10</small></form>`
+      <small>Sem cores: P=5, M=3. Com cores: uma linha por cor (ex.: Preto: P=5, M=3). Sem tamanho: Único=10. Cores reconhecidas mudam a ilustração na loja: Amarelo, Preto, Branco, Azul, Vermelho, Verde, Rosa, Cinza, Laranja, Roxo, Marrom, Bege, Vinho e Azul marinho.</small></form>`
         + (prods.map(x => `<div class="o"><div class="prow">${(x.images && x.images[0] || x.image_url) ? `<img class="thumb" src="${e(x.images && x.images[0] || x.image_url)}" alt="">` : '<div class="thumb"></div>'}
       <div style="flex:1"><div class="top"><b>${e(x.name)} ${x.active === false ? '<span class="tag warn">Oculto</span>' : ''}</b><b>${R(x.price)}</b></div>
-      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''} · ${(x.images || []).length} foto(s)</small><div>Estoque: ${e(fmt(x.stock)) || '—'}</div></div></div>
+      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''} · ${(x.images || []).length} foto(s)</small><div>Estoque: ${e(fmt(x.stock)).replace(/\n/g, '<br>') || '—'}</div></div></div>
       <div class="bar" style="margin:0"><button class="b2" data-a="ed" data-id="${x.id}">Editar</button><button class="b2" data-a="vis" data-id="${x.id}">${x.active === false ? 'Mostrar na loja' : 'Ocultar da loja'}</button><button class="b2" data-a="rep" data-id="${x.id}">Repor estoque</button><button class="b2" data-a="zero" data-id="${x.id}">Zerar estoque</button><button class="b2 red" data-a="delp" data-id="${x.id}">Excluir</button></div></div>`).join('') || '<p class="m">Nenhum produto cadastrado ainda.</p>');
     }
     async function shrink(file, max = 900) {
@@ -316,7 +334,7 @@ function qrSvg(text) {
       if (form.matches('[data-pf]')) {
         ev.preventDefault();
         const f = Object.fromEntries(new FormData(form)), st = parse(f.stock), btn = form.querySelector('[data-save]');
-        if (!Object.keys(st).length) return toast('Informe o estoque, por exemplo: P=5, M=3');
+        if (!Object.keys(st).length) return toast('Informe o estoque, por exemplo: P=5, M=3 (ou Preto: P=5, M=3)');
         btn.disabled = true; btn.textContent = 'Salvando...';
         const images = edit.images || [], removed = edit.removed || [];
         const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st, description: (f.desc || '').trim() || null, details: (f.details || '').trim() || null, size_chart: (f.chart || '').trim() || null, active: !!f.active, images, image_url: images[0] || null };
