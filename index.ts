@@ -4,7 +4,7 @@ const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&a
 Deno.serve(async (req) => {
   const { record: o } = await req.json();
   const num = `RL-${String(o.number).padStart(4, '0')}`;
-  const itens = o.items.map((i: any) => `${esc(i.qtd)}x ${esc(i.produto)} (${esc(i.tamanho)})`).join('<br>');
+  const itens = o.items.map((i: any) => `${esc(i.qtd)}x ${esc(i.produto)} (${esc(i.tamanho)})${i.encomenda ? ' - SOB ENCOMENDA' : ''}`).join('<br>');
   const wa = String(o.whatsapp || '').replace(/\D/g, '');
   const r = await fetch('https://api.resend.com/emails', {
     method: 'POST',

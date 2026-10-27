@@ -74,9 +74,9 @@
     const R = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const num = n => 'RL-' + String(n).padStart(4, '0');
     // estoque <-> texto. Sem cor: "P=5, M=3". Com cor, uma linha por cor: "Preto: P=5, M=3"
-    const fmt = st => {
+    const fmt = (st, mto) => {
       const g = {}; Object.entries(st || {}).forEach(([k, v]) => { const x = splitKey(k); (g[x.color] = g[x.color] || []).push([x.size, v]) });
-      return Object.keys(g).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(c => (c ? c + ': ' : '') + g[c].sort((a, b) => sizeCmp(a[0], b[0])).map(([s, v]) => `${s}=${v}`).join(', ')).join('\n');
+      return Object.keys(g).sort((a, b) => a.localeCompare(b, 'pt-BR')).map(c => (c ? c + ': ' : '') + g[c].sort((a, b) => sizeCmp(a[0], b[0])).map(([s, v]) => mto ? s : `${s}=${v}`).join(', ')).join('\n');
     };
     const parse = t => {
       const o = {}, clean = x => x.replace(/[|]/g, '').trim();
@@ -160,7 +160,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       const c = o.status === 'cancelado', tag = o.status === 'pedido_realizado' ? 'warn' : c ? 'bad' : 'ok';
       return `<div class="o"><div class="top"><b>${num(o.number)} · ${e(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('pt-BR')}</small></div>
       <div><span class="tag ${tag}">${ST[o.status] || e(o.status)}</span></div>
-      <div>${o.items.map(i => `${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})`).join('<br>')}</div>
+      <div>${o.items.map(i => `${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})${i.encomenda ? ' <span class="tag">encomenda</span>' : ''}`).join('<br>')}</div>
       <div>Total: <b>${R(o.total)}</b> · <a href="https://wa.me/55${e(o.whatsapp.replace(/\D/g, '').replace(/^55(?=\d{11}$)/, ''))}" target="_blank" rel="noopener">${e(o.whatsapp)}</a>${o.email ? ' · ' + e(o.email) : ''}</div>
       ${o.notes ? `<small>Obs: ${e(o.notes)}</small>` : ''}
       <div class="bar" style="margin:0">${NEXT[o.status] ? `<button class="btn" data-a="next" data-id="${o.id}">${NEXTLBL[NEXT[o.status]]}</button>` : ''}
@@ -174,7 +174,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     function ordersView() {
       const sum = a => a.reduce((s, o) => s + Number(o.total), 0);
       const aw = rows.filter(o => o.status === 'pedido_realizado'), pd = rows.filter(o => ['pagamento_confirmado', 'preparando', 'pronto_para_entrega'].includes(o.status)), dl = rows.filter(o => o.status === 'entregue');
-      const sep = {}; rows.filter(o => !DONE.includes(o.status)).forEach(o => o.items.forEach(i => { const k = `${i.produto} (${i.tamanho})`; sep[k] = (sep[k] || 0) + i.qtd }));
+      const sep = {}; rows.filter(o => !DONE.includes(o.status)).forEach(o => o.items.forEach(i => { const k = `${i.produto} (${i.tamanho})${i.encomenda ? ' · encomenda' : ''}`; sep[k] = (sep[k] || 0) + i.qtd }));
       return `<div class="cards">
         <div class="stat"><small>Aguardando pagamento</small><b>${R(sum(aw))}</b><small>${aw.length} pedido(s)</small></div>
         <div class="stat"><small>Pago, a entregar</small><b>${R(sum(pd))}</b><small>${pd.length} pedido(s)</small></div>
@@ -195,7 +195,9 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       <label>Preço (R$)<input name="preco" type="number" step="0.01" min="0" required value="${e(p.price)}"></label>
       <label>Tipo (ilustração sem foto)<select name="kind">${Object.entries(KIND).map(([k, v]) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
       <label>Cor da ilustração (sem foto)<select name="cor">${Object.entries(COR).map(([k, v]) => `<option value="${k}"${k === p.color ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-      <label class="span2">Estoque (por tamanho; com cores, uma linha por cor)<textarea class="mono" name="stock" required rows="3" placeholder="Preto: P=5, M=3, G=2&#10;Branco: P=2, M=4">${e(fmt(p.stock))}</textarea></label>
+      <label class="chk span2"><input type="checkbox" name="mto" ${p.made_to_order ? 'checked' : ''}> Produto sob encomenda (sem controle de estoque)</label>
+      <label class="span2">${p.made_to_order ? 'Opções disponíveis (sem quantidade; com cores, uma linha por cor)' : 'Estoque (por tamanho; com cores, uma linha por cor)'}<textarea class="mono" name="stock" required rows="3" placeholder="${p.made_to_order ? 'Preto: P, M, G, GG&#10;Branco: P, M, G' : 'Preto: P=5, M=3, G=2&#10;Branco: P=2, M=4'}">${e(fmt(p.stock, p.made_to_order))}</textarea></label>
+      ${p.made_to_order ? `<label class="span2">Prazo ou informação da encomenda (aparece na loja)<input name="lead" maxlength="160" value="${e(p.lead_time || '')}" placeholder="Ex.: Encomendas até 15/11. Entrega em cerca de 20 dias."></label>` : ''}
       <label class="span2">Descrição curta (opcional)<input name="desc" maxlength="300" value="${e(p.description || '')}"></label>
       <label class="span2">Detalhes do produto (material, tamanhos, medidas, cuidados)<textarea name="details" rows="5" maxlength="2000" placeholder="Material: 100% algodão&#10;Tamanhos: P ao GG&#10;Medidas (M): 70 cm de altura x 52 cm de largura&#10;Cuidados: lavar à mão, não usar alvejante">${e(p.details || '')}</textarea>
       <small>Linhas no formato "Título: valor" aparecem organizadas na página do produto.</small></label>
@@ -210,9 +212,9 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       <div class="bar"><button class="btn" type="submit" data-save>${p.id ? 'Salvar alterações' : 'Cadastrar produto'}</button>${p.id ? '<button class="b2" type="button" data-a="cancel">Cancelar edição</button>' : ''}</div>
       <small>Sem cores: P=5, M=3. Com cores: uma linha por cor (ex.: Preto: P=5, M=3). Sem tamanho: Único=10. Cores reconhecidas mudam a ilustração na loja: Amarelo, Preto, Branco, Azul, Vermelho, Verde, Rosa, Cinza, Laranja, Roxo, Marrom, Bege, Vinho e Azul marinho.</small></form>`
         + (prods.map(x => `<div class="o"><div class="prow">${(x.images && x.images[0] || x.image_url) ? `<img class="thumb" src="${e(x.images && x.images[0] || x.image_url)}" alt="">` : '<div class="thumb"></div>'}
-      <div style="flex:1"><div class="top"><b>${e(x.name)} ${x.active === false ? '<span class="tag warn">Oculto</span>' : ''}</b><b>${R(x.price)}</b></div>
-      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''} · ${(x.images || []).length} foto(s)</small><div>Estoque: ${e(fmt(x.stock)).replace(/\n/g, '<br>') || '—'}</div></div></div>
-      <div class="bar" style="margin:0"><button class="b2" data-a="ed" data-id="${x.id}">Editar</button><button class="b2" data-a="vis" data-id="${x.id}">${x.active === false ? 'Mostrar na loja' : 'Ocultar da loja'}</button><button class="b2" data-a="rep" data-id="${x.id}">Repor estoque</button><button class="b2" data-a="zero" data-id="${x.id}">Zerar estoque</button><button class="b2 red" data-a="delp" data-id="${x.id}">Excluir</button></div></div>`).join('') || '<p class="m">Nenhum produto cadastrado ainda.</p>');
+      <div style="flex:1"><div class="top"><b>${e(x.name)} ${x.made_to_order ? '<span class="tag">Sob encomenda</span>' : ''} ${x.active === false ? '<span class="tag warn">Oculto</span>' : ''}</b><b>${R(x.price)}</b></div>
+      <small>${e(x.category)} · ${KIND[x.kind] || ''} · ${COR[x.color] || ''} · ${(x.images || []).length} foto(s)</small><div>${x.made_to_order ? 'Sob encomenda. Opções' : 'Estoque'}: ${e(fmt(x.stock, x.made_to_order)).replace(/\n/g, '<br>') || '—'}</div>${x.made_to_order && x.lead_time ? `<small>${e(x.lead_time)}</small>` : ''}</div></div>
+      <div class="bar" style="margin:0"><button class="b2" data-a="ed" data-id="${x.id}">Editar</button><button class="b2" data-a="vis" data-id="${x.id}">${x.active === false ? 'Mostrar na loja' : 'Ocultar da loja'}</button>${x.made_to_order ? '' : `<button class="b2" data-a="rep" data-id="${x.id}">Repor estoque</button><button class="b2" data-a="zero" data-id="${x.id}">Zerar estoque</button>`}<button class="b2 red" data-a="delp" data-id="${x.id}">Excluir</button></div></div>`).join('') || '<p class="m">Nenhum produto cadastrado ainda.</p>');
     }
     async function shrink(file, max = 900) {
       const bmp = await createImageBitmap(file), s = Math.min(1, max / Math.max(bmp.width, bmp.height));
@@ -246,7 +248,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     /* ---------- edição de produto: fotos ---------- */
     function snapEdit() {
       const f = app.querySelector('[data-pf]'); if (!f) return; const g = n => f.elements[n];
-      Object.assign(edit, { name: g('nome').value, category: g('cat').value, price: g('preco').value, kind: g('kind').value, color: g('cor').value, stock: parse(g('stock').value), description: g('desc').value, details: g('details').value, size_chart: g('chart').value, active: g('active').checked });
+      Object.assign(edit, { name: g('nome').value, category: g('cat').value, price: g('preco').value, kind: g('kind').value, color: g('cor').value, stock: parse(g('stock').value), description: g('desc').value, details: g('details').value, size_chart: g('chart').value, made_to_order: g('mto').checked, lead_time: g('lead') ? g('lead').value : edit.lead_time, active: g('active').checked });
     }
     async function discardAdded() { for (const u of (edit.added || [])) await removePhoto(u); edit = {} }
     async function uploadMany(inp) {
@@ -323,6 +325,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     app.addEventListener('change', ev => {
       const t = ev.target;
       if (t.matches('[data-foto]')) uploadMany(t);
+      else if (t.name === 'mto') { snapEdit(); draw() }
       else if (t.matches('[data-f]')) { filtro = t.value; draw() }
       else if (t.matches('[data-st]')) {
         if (t.value === 'cancelado' && !confirm('Cancelar o pedido? Depois disso ele não poderá mais ser alterado e o estoque volta.')) { draw(); return }
@@ -337,7 +340,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
         if (!Object.keys(st).length) return toast('Informe o estoque, por exemplo: P=5, M=3 (ou Preto: P=5, M=3)');
         btn.disabled = true; btn.textContent = 'Salvando...';
         const images = edit.images || [], removed = edit.removed || [];
-        const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st, description: (f.desc || '').trim() || null, details: (f.details || '').trim() || null, size_chart: (f.chart || '').trim() || null, active: !!f.active, images, image_url: images[0] || null };
+        const d = { name: f.nome.trim(), category: f.cat.trim(), price: f.preco, kind: f.kind, color: f.cor, stock: st, description: (f.desc || '').trim() || null, details: (f.details || '').trim() || null, size_chart: (f.chart || '').trim() || null, made_to_order: !!f.mto, lead_time: (f.mto && (f.lead || '').trim()) || null, active: !!f.active, images, image_url: images[0] || null };
         const q = edit.id ? sb.from('products').update(d).eq('id', edit.id) : sb.from('products').insert(d);
         const ok = await run(q, 'Não foi possível salvar');
         if (ok) { for (const u of removed) await removePhoto(u); edit = {}; draw(); toast('Produto salvo') }

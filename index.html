@@ -363,9 +363,9 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       let L = P.filter(p => (cat === 'Todos' || p.cat === cat) && (!busca || (p.nome + ' ' + p.cat).toLowerCase().includes(busca.toLowerCase())));
       if (ordem === 'asc') L.sort((a, b) => a.preco - b.preco); else if (ordem === 'desc') L.sort((a, b) => b.preco - a.preco); else if (ordem === 'nome') L.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
       $('grid').innerHTML = L.length ? L.map(p => {
-        const tot = Object.values(p.est).reduce((s, n) => s + n, 0), has = tot > 0;
+        const tot = Object.values(p.est).reduce((s, n) => s + n, 0), has = p.mto ? Object.keys(p.est).length > 0 : tot > 0;
         const rt = RT[p.id];
-        return `<article class="card"><div class="pic" style="--c:${esc(p.cor)}"><button class="pic-btn" data-open="${p.id}" aria-label="Ver detalhes de ${esc(p.nome)}">${p.imgs[0] ? `<img src="${esc(p.imgs[0])}" alt="${esc(p.nome)}" loading="lazy">` : art(p.tipo, p.cor)}</button>${has && tot <= 3 ? '<span class="badge">Últimas unidades</span>' : ''}${p.imgs.length > 1 ? `<span class="badge" style="left:auto;right:10px">${p.imgs.length} fotos</span>` : ''}</div>
+        return `<article class="card"><div class="pic" style="--c:${esc(p.cor)}"><button class="pic-btn" data-open="${p.id}" aria-label="Ver detalhes de ${esc(p.nome)}">${p.imgs[0] ? `<img src="${esc(p.imgs[0])}" alt="${esc(p.nome)}" loading="lazy">` : art(p.tipo, p.cor)}</button>${p.mto ? '<span class="badge">Sob encomenda</span>' : (has && tot <= 3 ? '<span class="badge">Últimas unidades</span>' : '')}${p.imgs.length > 1 ? `<span class="badge" style="left:auto;right:10px">${p.imgs.length} fotos</span>` : ''}</div>
         <div class="info"><h3><button class="linkbtn" data-open="${p.id}">${esc(p.nome)}</button></h3>${rt ? `<span class="rt"><span class="stars" aria-hidden="true">${stars(rt.average)}</span> ${rt.average.toFixed(1).replace('.', ',')} (${rt.total})</span>` : ''}${p.desc ? `<span class="desc">${esc(p.desc)}</span>` : ''}<span class="price">${R(p.preco)}</span>
         ${has ? `<div class="row">${rowSelects(p)}<button class="add" data-id="${p.id}"${isOpen() ? '' : ' disabled'}>Adicionar</button></div>` : '<div class="row"><b>Esgotado</b></div>'}</div></article>`;
       }).join('') : `<p class="muted">${P.length ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto disponível no momento.'}</p>`;
@@ -374,9 +374,9 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       const { data, error } = await sb.from('products').select('*').order('id');
       if (error) { $('grid').innerHTML = '<p>Não foi possível carregar os produtos. Atualize a página.</p>'; return }
       await loadRatings();
-      P = data.filter(d => d.active !== false).map(d => ({ id: d.id, nome: d.name, cat: d.category, preco: +d.price, cor: d.color, tipo: d.kind, est: d.stock || {}, imgs: (d.images && d.images.length) ? d.images : (d.image_url ? [d.image_url] : []), desc: d.description, details: d.details, chart: parseChart(d.size_chart) }));
+      P = data.filter(d => d.active !== false).map(d => ({ id: d.id, nome: d.name, cat: d.category, preco: +d.price, cor: d.color, tipo: d.kind, est: d.stock || {}, imgs: (d.images && d.images.length) ? d.images : (d.image_url ? [d.image_url] : []), desc: d.description, details: d.details, chart: parseChart(d.size_chart), mto: !!d.made_to_order, lead: d.lead_time }));
       Object.keys(cart).forEach(k => {
-        const [id, t] = k.split('|'), p = P.find(x => x.id == id), have = p ? (p.est[t] || 0) : 0;
+        const [id, t] = k.split('|'), p = P.find(x => x.id == id), have = p ? avail(p, t) : 0;
         if (have < 1) delete cart[k]; else if (cart[k] > have) cart[k] = have;
       });
       renderFilters(); renderGrid(); renderCart();
@@ -405,6 +405,8 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       $('total').textContent = R(tot);
       $('items').innerHTML = L.length ? L.map(l => `<div class="item"><div><b>${esc(l.p.nome)}</b><small>${variantLabel(l.t)}${R(l.p.preco)}</small></div>
         <div class="qty"><button data-k="${esc(l.k)}" data-d="-1" aria-label="Diminuir">−</button><span>${l.q}</span><button data-k="${esc(l.k)}" data-d="1" aria-label="Aumentar">+</button></div></div>`).join('') : '<p class="muted">Seu carrinho está vazio. Adicione um produto para começar.</p>';
+      const mt = L.filter(l => l.p.mto);
+      if (mt.length) { const leads = [...new Set(mt.map(l => l.p.lead).filter(Boolean))]; $('items').insertAdjacentHTML('beforeend', `<div class="paynote" style="margin-top:10px"><b>Item sob encomenda.</b> ${esc(leads.join(' '))}</div>`) }
       $('checkout').hidden = !L.length;
       $('submitBtn').disabled = !isOpen();
       saveCart();
@@ -433,7 +435,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     $('items').addEventListener('click', e => {
       const b = e.target.closest('[data-k]'); if (!b) return;
       const k = b.dataset.k, [pid, t] = k.split('|'), d = +b.dataset.d;
-      if (d > 0 && cart[k] >= (P.find(x => x.id == pid).est[t] || 0)) return toast('Quantidade máxima em estoque atingida.');
+      if (d > 0 && cart[k] >= avail(P.find(x => x.id == pid), t)) return toast('Quantidade máxima em estoque atingida.');
       cart[k] += d; if (cart[k] <= 0) delete cart[k]; renderCart();
     });
     $('whats').addEventListener('input', e => { e.target.value = fmtPhone(e.target.value) });
@@ -442,12 +444,14 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     /* ---------- detalhes do produto e avaliações ---------- */
     const stars = n => { const r = Math.round(n); return '★'.repeat(r) + '☆'.repeat(5 - r) };
     const COLORHEX = { 'amarelo': '#ffe70e', 'preto': '#111111', 'branco': '#f4f4f4', 'azul': '#2f6fed', 'azul marinho': '#14213d', 'vermelho': '#d32f2f', 'vinho': '#7a1f2b', 'verde': '#2e9e5b', 'rosa': '#f06292', 'cinza': '#9e9e9e', 'laranja': '#f28c28', 'roxo': '#7e57c2', 'marrom': '#7a4b2a', 'bege': '#e8d9b5' };
+    // quantidade disponível: sob encomenda não tem limite de estoque (só a opção precisa existir)
+    const avail = (p, k) => p.mto ? (p.est[k] !== undefined ? 50 : 0) : (p.est[k] || 0);
     const colorHex = n => COLORHEX[String(n || '').toLowerCase()] || null;
     const colorsOf = p => [...new Set(Object.keys(p.est).map(k => splitKey(k).color).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const sizesOf = (p, c) => Object.keys(p.est).map(splitKey).filter(v => v.color === c).map(v => v.size).sort(sizeCmp);
-    const colorAvail = (p, c) => sizesOf(p, c).some(s => (p.est[variantKey(c, s)] || 0) > 0);
+    const colorAvail = (p, c) => sizesOf(p, c).some(s => avail(p, variantKey(c, s)) > 0);
     const firstColor = p => { const L = colorsOf(p); return L.find(c => colorAvail(p, c)) || L[0] || '' };
-    const sizeOpts = (p, c) => sizesOf(p, c).map(s => { const n = p.est[variantKey(c, s)] || 0; return `<option value="${esc(s)}"${n < 1 ? ' disabled' : ''}>${esc(s)}${n < 1 ? ' (esgotado)' : ''}</option>` }).join('');
+    const sizeOpts = (p, c) => sizesOf(p, c).map(s => { const n = avail(p, variantKey(c, s)); return `<option value="${esc(s)}"${n < 1 ? ' disabled' : ''}>${esc(s)}${n < 1 ? ' (esgotado)' : ''}</option>` }).join('');
     const colorOpts = (p, sel) => colorsOf(p).map(c => { const ok = colorAvail(p, c); return `<option value="${esc(c)}"${ok ? '' : ' disabled'}${c === sel ? ' selected' : ''}>${esc(c)}${ok ? '' : ' (esgotado)'}</option>` }).join('');
     const rowSelects = p => { const c0 = firstColor(p); return (colorsOf(p).length ? `<select id="c${p.id}" data-c="${p.id}" aria-label="Cor de ${esc(p.nome)}">${colorOpts(p, c0)}</select>` : '') + `<select aria-label="Tamanho de ${esc(p.nome)}" id="t${p.id}">${sizeOpts(p, c0)}</select>` };
     function variantLabel(t) {
@@ -456,7 +460,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     }
     function addToCart(id, t) {
       if (!isOpen()) { toast('A loja está fechada no momento.'); return false }
-      const k = id + '|' + t, have = P.find(x => x.id === id).est[t] || 0;
+      const k = id + '|' + t, have = avail(P.find(x => x.id === id), t);
       if (have < 1) { toast('Tamanho esgotado.'); return false }
       if ((cart[k] || 0) >= have) { toast('Quantidade máxima em estoque atingida.'); return false }
       cart[k] = (cart[k] || 0) + 1; renderCart(); return true;
@@ -484,7 +488,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       document.querySelectorAll('#starin button').forEach(b => { const v = +b.dataset.star; b.classList.toggle('on', v <= cur.rating); b.setAttribute('aria-checked', String(v === cur.rating)) });
     }
     function renderProduct() {
-      const p = P.find(x => x.id === cur.id), has = Object.values(p.est).some(n => n > 0), rated = store.get('rl_rev_' + p.id, false);
+      const p = P.find(x => x.id === cur.id), has = p.mto ? Object.keys(p.est).length > 0 : Object.values(p.est).some(n => n > 0), rated = store.get('rl_rev_' + p.id, false);
       const chartBtn = p.chart.length ? '<div><button type="button" class="sizebtn" data-act="chart">Tabela de medidas</button></div>' : '';
       const form = `<form id="revform" class="stack" novalidate><b>Deixe sua avaliação</b>
         <div>Sua nota<div class="starin" id="starin" role="radiogroup" aria-label="Sua nota">${[1, 2, 3, 4, 5].map(i => `<button type="button" role="radio" aria-checked="false" data-star="${i}" aria-label="${i} estrela${i > 1 ? 's' : ''}">★</button>`).join('')}</div></div>
@@ -494,7 +498,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
         <button class="btn" type="submit">Enviar avaliação</button><div id="revmsg" role="alert" class="muted"></div></form>`;
       $('proddlg').innerHTML = `<div class="dlg"><div class="pdtop"><h2 id="pdtitle">${esc(p.nome)}</h2><button class="x" data-act="close" aria-label="Fechar">×</button></div>
         <div class="pdgrid"><div class="gal" id="gal"></div>
-        <div class="pdinfo"><span class="price">${R(p.preco)}</span>${p.desc ? `<p style="margin:0">${esc(p.desc)}</p>` : ''}${detailsHtml(p.details)}
+        <div class="pdinfo"><span class="price">${R(p.preco)}</span>${p.mto ? `<div class="paynote"><b>Produto sob encomenda.</b>${p.lead ? ' ' + esc(p.lead) : ''}</div>` : ''}${p.desc ? `<p style="margin:0">${esc(p.desc)}</p>` : ''}${detailsHtml(p.details)}
         ${chartBtn}${has ? `<div class="row">${colorsOf(p).length ? `<select id="mc" aria-label="Cor">${colorOpts(p, cur.color)}</select>` : ''}<select id="ms" aria-label="Tamanho">${sizeOpts(p, cur.color || '')}</select><button class="btn" data-act="add"${isOpen() ? '' : ' disabled'}>Adicionar ao carrinho</button></div>` : '<b>Esgotado</b>'}</div></div>
         <section aria-labelledby="revh"><h3 id="revh">Avaliações</h3><div id="revsum" style="margin:6px 0"></div><div id="revlist"></div>
         ${rated ? '<p class="muted">Obrigado pela sua avaliação!</p>' : form}</section></div>`;
