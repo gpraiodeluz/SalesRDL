@@ -156,10 +156,18 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       return rows.filter(o => (filtro === 'todos' || (filtro === 'pendentes' ? !DONE.includes(o.status) : o.status === filtro))
         && (!b || o.customer_name.toLowerCase().includes(b) || num(o.number).toLowerCase().includes(b) || (bd && (o.whatsapp.replace(/\D/g, '').includes(bd) || String(o.number) === String(+bd)))));
     }
+    const MPST = { approved: 'aprovado', in_process: 'em análise', pending: 'pendente', rejected: 'recusado', cancelled: 'cancelado', refunded: 'reembolsado', charged_back: 'contestado (chargeback)' };
+    const payLabel = o => o.payment_method === 'dinheiro' ? 'Dinheiro (na entrega)' : o.payment_method === 'mercadopago' || o.mp_status ? `Mercado Pago${o.mp_installments ? ' ' + o.mp_installments + 'x' : ''}${o.mp_status ? ' ' + (MPST[o.mp_status] || o.mp_status) : ''}` : 'PIX';
+    function payInfo(o) {
+      const bad = ['rejected', 'cancelled', 'refunded', 'charged_back'].includes(o.mp_status), cls = o.mp_status === 'approved' ? 'ok' : (bad ? 'bad' : (o.mp_status ? 'warn' : ''));
+      const warn = (o.mp_status === 'approved' && o.status === 'cancelado') ? '<div style="color:var(--bad)"><b>Pagamento aprovado em pedido cancelado: faça o reembolso no Mercado Pago.</b></div>' : '';
+      const amt = o.mp_amount ? `<div><small>Cobrado no cartão: ${R(o.mp_amount)}</small></div>` : '';
+      return `<div><span class="tag ${cls}">${e(payLabel(o))}</span></div>${amt}${warn}`;
+    }
     function orderCard(o) {
       const c = o.status === 'cancelado', tag = o.status === 'pedido_realizado' ? 'warn' : c ? 'bad' : 'ok';
       return `<div class="o"><div class="top"><b>${num(o.number)} · ${e(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('pt-BR')}</small></div>
-      <div><span class="tag ${tag}">${ST[o.status] || e(o.status)}</span></div>
+      <div><span class="tag ${tag}">${ST[o.status] || e(o.status)}</span></div>${payInfo(o)}
       <div>${o.items.map(i => `${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})${i.encomenda ? ' <span class="tag">encomenda</span>' : ''}`).join('<br>')}</div>
       <div>Total: <b>${R(o.total)}</b> · <a href="https://wa.me/55${e(o.whatsapp.replace(/\D/g, '').replace(/^55(?=\d{11}$)/, ''))}" target="_blank" rel="noopener">${e(o.whatsapp)}</a>${o.email ? ' · ' + e(o.email) : ''}</div>
       ${o.notes ? `<small>Obs: ${e(o.notes)}</small>` : ''}
@@ -267,7 +275,14 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       <label class="chk span2"><input type="checkbox" name="store_open" ${S.store_open === 'false' ? '' : 'checked'}> Loja aberta para novos pedidos</label>
       <label class="span2">Aviso no topo da loja (deixe vazio para não mostrar)<input name="notice" maxlength="160" value="${e(S.notice)}" placeholder="Ex.: Pedidos até sexta, entrega no encontro de sábado"></label>
       <label class="span2">Informações de entrega<textarea name="delivery_info" rows="2" maxlength="300">${e(S.delivery_info)}</textarea></label>
-      <label class="span2">WhatsApp de contato (recebe os comprovantes)<input name="contact_whats" inputmode="tel" value="${e(fmtPhone(S.contact_whats))}" placeholder="(43) 99999-9999"></label></div>
+      <label class="span2">WhatsApp de contato (recebe os comprovantes)<input name="contact_whats" inputmode="tel" value="${e(fmtPhone(S.contact_whats))}" placeholder="(43) 99999-9999"></label>
+      <label class="chk span2"><input type="checkbox" name="cash_enabled" ${S.cash_enabled === 'true' ? 'checked' : ''}> Oferecer pagamento em dinheiro (em mãos, na entrega)</label></div>
+      <hr style="border:0;border-top:1px solid var(--l);margin:16px 0"><b>Cartão parcelado (Mercado Pago)</b><div class="fg" style="margin-top:10px">
+      <label class="chk span2"><input type="checkbox" name="mp_enabled" ${S.mp_enabled === 'true' ? 'checked' : ''}> Oferecer pagamento no cartão na loja</label>
+      <label>Máximo de parcelas oferecidas<input name="mp_max_installments" type="number" min="1" max="12" value="${e(S.mp_max_installments || '12')}"></label>
+      <label>Taxa do Mercado Pago a repassar no cartão (%)<input name="mp_fee_pct" type="number" min="0" max="30" step="0.01" value="${e(S.mp_fee_pct || '0')}"></label>
+      <small class="span2">O preço no cartão fica = preço ÷ (1 − taxa), para você receber o valor cheio cadastrado. Ex.: taxa 4,99% e produto de R$ 46,00 vira R$ 48,42 no cartão. PIX e dinheiro continuam no preço cadastrado. Use 0 para não cobrar diferença.</small></div>
+      <small>Só ative depois de testar. O Access Token fica guardado no Supabase, não aqui. Juros do comprador ou parcelas sem juros são definidos no painel do Mercado Pago (Seu negócio &gt; Custos). Quando o pagamento é aprovado, o pedido vira "Pagamento confirmado" sozinho.</small>
       <hr style="border:0;border-top:1px solid var(--l);margin:16px 0"><b>Pagamento por PIX</b><div class="fg" style="margin-top:10px">
       <label>Tipo da chave<select name="pix_type">${Object.entries(PIXTYPE).map(([k, v]) => `<option value="${k}"${k === t ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
       <label>Chave PIX<input name="pix_key" required value="${e(t === 'phone' ? fmtPhone(S.pix_key) : S.pix_key)}"></label>
@@ -353,6 +368,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
         const oldKey = S.pix_type === 'phone' ? pixKey('phone', S.pix_key || '') : (S.pix_key || '');
         if ((newKey !== oldKey || f.pix_type !== S.pix_type) && !confirm('Os próximos pagamentos serão feitos para a chave:\n\n' + newKey + '\n\nConfirma?')) return;
         const rows2 = [['store_open', f.store_open ? 'true' : 'false'], ['notice', f.notice.trim()], ['delivery_info', f.delivery_info.trim()], ['contact_whats', digits(f.contact_whats)],
+        ['cash_enabled', f.cash_enabled ? 'true' : 'false'], ['mp_enabled', f.mp_enabled ? 'true' : 'false'], ['mp_fee_pct', String(Math.min(30, Math.max(0, parseFloat(String(f.mp_fee_pct).replace(',', '.')) || 0)))], ['mp_max_installments', String(Math.min(12, Math.max(1, parseInt(f.mp_max_installments) || 12)))],
         ['pix_type', f.pix_type], ['pix_key', f.pix_type === 'phone' ? digits(f.pix_key) : f.pix_key.trim()], ['pix_name', f.pix_name.trim()], ['pix_city', f.pix_city.trim()]].map(([key, value]) => ({ key, value }));
         const { error } = await sb.from('settings').upsert(rows2);
         if (error) return toast('Não foi possível salvar: ' + error.message);
@@ -361,7 +377,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     });
     function csv() {
       const v = visible(), q = x => '"' + String(x ?? '').replace(/"/g, '""') + '"';
-      const t = ['Pedido;Data;Nome;WhatsApp;Itens;Total;Status;Obs', ...v.map(o => [num(o.number), new Date(o.created_at).toLocaleString('pt-BR'), o.customer_name, o.whatsapp, o.items.map(i => `${i.qtd}x ${i.produto} (${i.tamanho})`).join(' | '), o.total, ST[o.status], o.notes].map(q).join(';'))].join('\n');
+      const t = ['Pedido;Data;Nome;WhatsApp;Itens;Total;Status;Obs;Pagamento', ...v.map(o => [num(o.number), new Date(o.created_at).toLocaleString('pt-BR'), o.customer_name, o.whatsapp, o.items.map(i => `${i.qtd}x ${i.produto} (${i.tamanho})`).join(' | '), o.total, ST[o.status], o.notes, payLabel(o)].map(q).join(';'))].join('\n');
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + t], { type: 'text/csv' })); a.download = 'pedidos.csv'; a.click();
     }
     init();

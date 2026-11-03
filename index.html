@@ -109,6 +109,11 @@
     form.stack { display: grid; gap: 10px; margin-top: 8px }
     label { font-weight: 600; font-size: .9rem; display: grid; gap: 4px }
     input, textarea { border: 1.5px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 11px; width: 100% }
+    fieldset.paymeth { border: 0; padding: 0; margin: 0; display: grid; gap: 8px }
+    fieldset.paymeth legend { font-weight: 600; font-size: .9rem; padding: 0; margin-bottom: 4px }
+    .mpback { border-radius: var(--r); padding: 14px 18px; margin-bottom: 20px; font-weight: 600; background: color-mix(in srgb, var(--sun) 35%, var(--surface)) }
+    .mpback.bad { background: #fde8e8; color: #7a1010 }
+    @media (prefers-color-scheme:dark) { .mpback.bad { background: #3a1616; color: #ffb4b4 } }
     .paynote { background: color-mix(in srgb, var(--sun) 25%, var(--surface)); border-radius: 10px; padding: 10px 12px; font-size: .9rem }
     .msg { border-radius: 10px; padding: 12px; margin-top: 10px; background: #fde8e8; color: #7a1010; font-weight: 600 }
     @media (prefers-color-scheme:dark) { .msg { background: #3a1616; color: #ffb4b4 } }
@@ -128,6 +133,8 @@
     .linkbtn:hover { text-decoration: underline }
     .rt { font-size: .85rem; color: var(--muted) }
     .stars { color: #f5b301; letter-spacing: 1px }
+    [hidden] { display: none !important }
+    .cardprice { display: block; font-size: .85rem; color: var(--muted); margin-top: 2px }
     .chk { display: flex; align-items: center; gap: 8px }
     .chk input { width: auto }
     dialog.pd { width: min(880px, calc(100% - 24px)) }
@@ -201,6 +208,7 @@
       <img class="herologo" src="logo.png" alt="Logo do grupo Raio de Luz">
     </section>
 
+    <div class="mpback" id="mpback" role="status" hidden></div>
     <div class="closed" id="closed" hidden>A loja está fechada para novos pedidos no momento. Você ainda pode ver os produtos e acompanhar pedidos já feitos.</div>
 
     <section id="produtos" aria-labelledby="h-prod">
@@ -254,13 +262,20 @@
     <h2>Seu pedido</h2>
     <div id="items"></div>
     <div id="checkout" hidden>
-      <div class="total"><span>Total</span><span id="total">R$ 0,00</span></div>
+      <div class="total"><span id="totallabel">Total</span><span id="total">R$ 0,00</span></div>
+      <p class="muted" id="totalnote" style="margin:-4px 0 6px;font-size:.88rem" hidden></p>
       <form class="stack" id="form" novalidate>
         <label>Nome<input name="nome" required minlength="2" maxlength="100" autocomplete="name"></label>
         <label>WhatsApp<input name="whats" id="whats" required inputmode="tel" autocomplete="tel" placeholder="(43) 99999-9999"></label>
         <label>E-mail (opcional)<input name="email" type="email" maxlength="120" autocomplete="email"></label>
         <label>Observações (opcional)<textarea name="obs" rows="2" maxlength="500" placeholder="Ex.: retiro no encontro de sábado"></textarea></label>
-        <div class="paynote"><b>Pagamento: PIX.</b> Ao enviar o pedido, você vê o QR Code e o código copia e cola.</div>
+        <fieldset class="paymeth" id="paymeth" hidden>
+          <legend>Forma de pagamento</legend>
+          <label class="chk"><input type="radio" name="metodo" value="pix" checked> PIX (QR Code na hora)</label>
+          <label class="chk" id="mprow"><input type="radio" name="metodo" value="mp"> <span id="mplabel">Cartão de crédito parcelado (Mercado Pago)</span></label>
+          <label class="chk" id="cashrow"><input type="radio" name="metodo" value="dinheiro"> Dinheiro (pago em mãos na entrega)</label>
+        </fieldset>
+        <div class="paynote" id="paynote"><b>Pagamento: PIX.</b> Ao enviar o pedido, você vê o QR Code e o código copia e cola.</div>
         <button class="btn" type="submit" id="submitBtn">Enviar pedido e pagar</button>
       </form>
     </div>
@@ -280,6 +295,10 @@
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const R = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    /* preço no cartão: repassa a taxa do Mercado Pago para o grupo receber o valor cheio (mesma conta da função mp-checkout) */
+    const feeBps = () => Math.round(Math.min(30, Math.max(0, parseFloat(String(S.mp_fee_pct || '0').replace(',', '.')) || 0)) * 100);
+    const cardOn = () => S.mp_enabled === 'true' && feeBps() > 0;
+    const cardUnit = preco => Math.ceil(Math.round(preco * 100) * 10000 / (10000 - feeBps())) / 100;
     const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch { } } };
     const ST = { pedido_realizado: 'Pedido realizado', pagamento_confirmado: 'Pagamento confirmado', preparando: 'Preparando', pronto_para_entrega: 'Pronto para entrega', entregue: 'Entregue', cancelado: 'Cancelado' };
     const FLOW = ['pedido_realizado', 'pagamento_confirmado', 'preparando', 'pronto_para_entrega', 'entregue'];
@@ -322,7 +341,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
 /*PIX-END*/
 
 
-    let S = { store_open: 'true', notice: '', delivery_info: '', contact_whats: '', pix_type: 'phone', pix_key: '', pix_name: '', pix_city: 'Brasil' };
+    let S = { store_open: 'true', notice: '', delivery_info: '', contact_whats: '', pix_type: 'phone', pix_key: '', pix_name: '', pix_city: 'Brasil', mp_enabled: 'false', mp_max_installments: '12' };
     let P = [], RT = {}, firstLoad = true, cat = 'Todos', busca = '', ordem = 'rel', cart = store.get('rl_cart', {});
     const isOpen = () => S.store_open !== 'false';
     const waLink = (raw, text) => { let d = digits(raw); if (d.length <= 11) d = '55' + d; return `https://wa.me/${d}?text=${encodeURIComponent(text)}` };
@@ -366,7 +385,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
         const tot = Object.values(p.est).reduce((s, n) => s + n, 0), has = p.mto ? Object.keys(p.est).length > 0 : tot > 0;
         const rt = RT[p.id];
         return `<article class="card"><div class="pic" style="--c:${esc(p.cor)}"><button class="pic-btn" data-open="${p.id}" aria-label="Ver detalhes de ${esc(p.nome)}">${p.imgs[0] ? `<img src="${esc(p.imgs[0])}" alt="${esc(p.nome)}" loading="lazy">` : art(p.tipo, p.cor)}</button>${p.mto ? '<span class="badge">Sob encomenda</span>' : (has && tot <= 3 ? '<span class="badge">Últimas unidades</span>' : '')}${p.imgs.length > 1 ? `<span class="badge" style="left:auto;right:10px">${p.imgs.length} fotos</span>` : ''}</div>
-        <div class="info"><h3><button class="linkbtn" data-open="${p.id}">${esc(p.nome)}</button></h3>${rt ? `<span class="rt"><span class="stars" aria-hidden="true">${stars(rt.average)}</span> ${rt.average.toFixed(1).replace('.', ',')} (${rt.total})</span>` : ''}${p.desc ? `<span class="desc">${esc(p.desc)}</span>` : ''}<span class="price">${R(p.preco)}</span>
+        <div class="info"><h3><button class="linkbtn" data-open="${p.id}">${esc(p.nome)}</button></h3>${rt ? `<span class="rt"><span class="stars" aria-hidden="true">${stars(rt.average)}</span> ${rt.average.toFixed(1).replace('.', ',')} (${rt.total})</span>` : ''}${p.desc ? `<span class="desc">${esc(p.desc)}</span>` : ''}<span class="price">${R(p.preco)}</span>${cardOn() ? `<span class="cardprice">PIX ou dinheiro · no cartão <b>${R(cardUnit(p.preco))}</b></span>` : ''}
         ${has ? `<div class="row">${rowSelects(p)}<button class="add" data-id="${p.id}"${isOpen() ? '' : ' disabled'}>Adicionar</button></div>` : '<div class="row"><b>Esgotado</b></div>'}</div></article>`;
       }).join('') : `<p class="muted">${P.length ? 'Nenhum produto encontrado para essa busca.' : 'Nenhum produto disponível no momento.'}</p>`;
     }
@@ -391,7 +410,13 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       (data || []).forEach(r => S[r.key] = r.value);
       $('notice').hidden = !S.notice; $('notice').textContent = S.notice;
       $('closed').hidden = isOpen();
+      const mp = S.mp_enabled === 'true', cash = S.cash_enabled === 'true', n = Math.min(12, Math.max(1, parseInt(S.mp_max_installments) || 12));
+      $('paymeth').hidden = !(mp || cash); $('mprow').hidden = !mp; $('cashrow').hidden = !cash;
+      if (!mp && !cash) document.querySelector('input[name=metodo][value=pix]').checked = true;
+      $('mplabel').textContent = `Cartão de crédito em até ${n}x (Mercado Pago)`;
+      $('paynote').innerHTML = (mp || cash) ? '<b>Pagamento:</b> PIX (QR Code na hora)' + (mp ? ', cartão parcelado pelo Mercado Pago (mostra as parcelas e eventuais juros antes de você pagar)' : '') + (cash ? (mp ? ' ou' : ' ou') + ' dinheiro em mãos na entrega' : '') + '.' : '<b>Pagamento: PIX.</b> Ao enviar o pedido, você vê o QR Code e o código copia e cola.';
       if (S.delivery_info) $('deliveryInfo').textContent = S.delivery_info;
+      if (typeof renderCart === 'function' && typeof P !== 'undefined' && P.length) { renderGrid(); renderCart() }
       $('contact').innerHTML = S.contact_whats ? `Dúvidas? <a href="${waLink(S.contact_whats, 'Olá! Tenho uma dúvida sobre a loja do Raio de Luz.')}" target="_blank" rel="noopener">Fale com o grupo pelo WhatsApp</a>` : '';
       renderGrid();
     }
@@ -402,7 +427,12 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     function renderCart() {
       const L = lines(), tot = L.reduce((s, l) => s + l.p.preco * l.q, 0);
       $('count').textContent = L.reduce((s, l) => s + l.q, 0);
-      $('total').textContent = R(tot);
+      const mpSel = (document.querySelector('input[name=metodo]:checked') || {}).value === 'mp' && cardOn();
+      const cardTot = L.reduce((s, l) => s + Math.round(cardUnit(l.p.preco) * 100) * l.q, 0) / 100;
+      $('total').textContent = R(mpSel ? cardTot : tot);
+      $('totallabel').textContent = mpSel ? 'Total no cartão' : 'Total';
+      $('totalnote').hidden = !cardOn() || !L.length;
+      $('totalnote').textContent = cardOn() ? `PIX ou dinheiro: ${R(tot)} · Cartão: ${R(cardTot)} (à vista; se parcelar, o Mercado Pago soma os juros e mostra antes de você pagar).` : '';
       $('items').innerHTML = L.length ? L.map(l => `<div class="item"><div><b>${esc(l.p.nome)}</b><small>${variantLabel(l.t)}${R(l.p.preco)}</small></div>
         <div class="qty"><button data-k="${esc(l.k)}" data-d="-1" aria-label="Diminuir">−</button><span>${l.q}</span><button data-k="${esc(l.k)}" data-d="1" aria-label="Aumentar">+</button></div></div>`).join('') : '<p class="muted">Seu carrinho está vazio. Adicione um produto para começar.</p>';
       const mt = L.filter(l => l.p.mto);
@@ -498,7 +528,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
         <button class="btn" type="submit">Enviar avaliação</button><div id="revmsg" role="alert" class="muted"></div></form>`;
       $('proddlg').innerHTML = `<div class="dlg"><div class="pdtop"><h2 id="pdtitle">${esc(p.nome)}</h2><button class="x" data-act="close" aria-label="Fechar">×</button></div>
         <div class="pdgrid"><div class="gal" id="gal"></div>
-        <div class="pdinfo"><span class="price">${R(p.preco)}</span>${p.mto ? `<div class="paynote"><b>Produto sob encomenda.</b>${p.lead ? ' ' + esc(p.lead) : ''}</div>` : ''}${p.desc ? `<p style="margin:0">${esc(p.desc)}</p>` : ''}${detailsHtml(p.details)}
+        <div class="pdinfo"><span class="price">${R(p.preco)}</span>${cardOn() ? `<span class="cardprice">PIX ou dinheiro. No cartão: <b>${R(cardUnit(p.preco))}</b> (à vista; o parcelamento tem juros do Mercado Pago)</span>` : ''}${p.mto ? `<div class="paynote"><b>Produto sob encomenda.</b>${p.lead ? ' ' + esc(p.lead) : ''}</div>` : ''}${p.desc ? `<p style="margin:0">${esc(p.desc)}</p>` : ''}${detailsHtml(p.details)}
         ${chartBtn}${has ? `<div class="row">${colorsOf(p).length ? `<select id="mc" aria-label="Cor">${colorOpts(p, cur.color)}</select>` : ''}<select id="ms" aria-label="Tamanho">${sizeOpts(p, cur.color || '')}</select><button class="btn" data-act="add"${isOpen() ? '' : ' disabled'}>Adicionar ao carrinho</button></div>` : '<b>Esgotado</b>'}</div></div>
         <section aria-labelledby="revh"><h3 id="revh">Avaliações</h3><div id="revsum" style="margin:6px 0"></div><div id="revlist"></div>
         ${rated ? '<p class="muted">Obrigado pela sua avaliação!</p>' : form}</section></div>`;
@@ -585,8 +615,40 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       if (e.target.closest('[data-ca="close"]')) d.close ? d.close() : d.removeAttribute('open');
     });
 
+    /* ---------- cartão (Mercado Pago) ---------- */
+    const goto = u => { location.href = u };
+    async function startCard(number, whats) {
+      try {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/mp-checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY }, body: JSON.stringify({ number, whats }) });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.url) return { url: j.url };
+        return { error: j.error || 'Não foi possível abrir o pagamento no cartão.' };
+      } catch { return { error: 'Não foi possível abrir o pagamento no cartão.' } }
+    }
+    function mpReturn() {
+      const q = new URLSearchParams(location.search), st = q.get('mp'), n = parseInt(q.get('pedido'), 10);
+      if (!st || !n) return;
+      const msg = { ok: ['', `Recebemos o seu pagamento no cartão do pedido ${orderNum(n)}. Estamos confirmando, e o status muda em instantes. Veja em Acompanhar pedido.`],
+        pendente: ['', `O pagamento do pedido ${orderNum(n)} está em análise no Mercado Pago. Assim que for aprovado, o status do pedido muda sozinho.`],
+        falha: ['bad', `O pagamento do pedido ${orderNum(n)} não foi concluído. O pedido continua registrado: tente de novo em Acompanhar pedido ou pague por PIX.`] }[st];
+      if (!msg) return;
+      const b = $('mpback'); b.className = 'mpback ' + msg[0]; b.textContent = msg[1]; b.hidden = false;
+      try { history.replaceState(null, '', location.pathname + '#acompanhar') } catch { }
+      const l = store.get('rl_last', null);
+      if (l && Number(l.number) === n) { prefillTrack(); setTimeout(() => $('trackForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })), 2000) }
+    }
+
     /* ---------- PIX ---------- */
-    function showPix(o) {
+    function showCash(o) {
+      const dlg = $('pixdlg'), num = orderNum(o.number);
+      dlg.innerHTML = `<div class="dlg"><h2>Pedido ${num}</h2>
+        <p style="margin:0">Pagamento em <b>dinheiro</b>, em mãos, na entrega. Total: <b>${R(o.total)}</b>. Guarde o número do pedido para acompanhar.</p>
+        <p class="muted" style="margin:0;font-size:.9rem">Se possível, leve o valor trocado. O pedido segue como "pedido realizado" até o pagamento ser recebido. <span data-d></span></p>
+        <button class="btn ghost" data-act="close">Fechar</button></div>`;
+      dlg.querySelector('[data-d]').textContent = S.delivery_info || '';
+      if (dlg.showModal) { if (!dlg.open) dlg.showModal() } else dlg.setAttribute('open', '');
+    }
+    function showPix(o, note) {
       const dlg = $('pixdlg'), num = orderNum(o.number);
       let body;
       if (!S.pix_key) {
@@ -602,13 +664,14 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
           <button class="btn ghost" data-act="copy-key">Copiar chave</button>`;
       }
       const comp = S.contact_whats ? `<a class="btn dark" target="_blank" rel="noopener" href="${waLink(S.contact_whats, `Olá! Segue o comprovante do pedido ${num} (${R(o.total)}).`)}">Enviar comprovante pelo WhatsApp</a>` : '';
-      dlg.innerHTML = `<div class="dlg"><h2>Pedido ${num}</h2>
+      dlg.innerHTML = `<div class="dlg"><h2>Pedido ${num}</h2>${note ? '<div class="msg" data-note></div>' : ''}
         <p style="margin:0">Total a pagar: <b>${R(o.total)}</b>. Guarde o número do pedido para acompanhar.</p>
         ${body}${comp}
         <p class="muted" style="margin:0;font-size:.9rem">Depois de pagar, envie o comprovante pelo WhatsApp. Quando confirmarmos, o status muda no acompanhamento do pedido. ${esc(S.delivery_info)}</p>
         <button class="btn ghost" data-act="close">Fechar</button></div>`;
       const pc = dlg.querySelector('#pixcode'); if (pc) pc.textContent = S.pix_key ? pixPayload({ type: S.pix_type, key: S.pix_key, name: S.pix_name, city: S.pix_city, amount: o.total, txid: 'RL' + String(o.number).padStart(4, '0') }) : '';
       dlg._code = pc ? pc.textContent : '';
+      const nt = dlg.querySelector('[data-note]'); if (nt) nt.textContent = note;
       if (dlg.showModal) { if (!dlg.open) dlg.showModal() } else dlg.setAttribute('open', '');
     }
     $('pixdlg').addEventListener('click', e => {
@@ -619,6 +682,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       else if (b.dataset.act === 'close') { dlg.close ? dlg.close() : dlg.removeAttribute('open') }
     });
 
+    $('form').addEventListener('change', e => { if (e.target.name === 'metodo') renderCart() });
     /* ---------- enviar pedido ---------- */
     const say = m => { $('done').innerHTML = '<div class="msg"></div>'; $('done').firstChild.textContent = m };
     $('form').onsubmit = async e => {
@@ -630,7 +694,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       if (wd.length < 10 || wd.length > 13) return say('Informe um WhatsApp válido, com DDD.');
       const local = L.reduce((s, l) => s + l.p.preco * l.q, 0);
       const btn = $('submitBtn'); btn.disabled = true; btn.textContent = 'Enviando...';
-      const { data, error } = await sb.rpc('create_order', { p_nome: f.nome, p_whats: f.whats, p_email: f.email || null, p_obs: f.obs || null, p_items: L.map(l => ({ id: l.p.id, tamanho: l.t, qtd: l.q })) });
+      const { data, error } = await sb.rpc('create_order', { p_nome: f.nome, p_whats: f.whats, p_email: f.email || null, p_obs: f.obs || null, p_items: L.map(l => ({ id: l.p.id, tamanho: l.t, qtd: l.q })), p_metodo: f.metodo === 'dinheiro' && S.cash_enabled === 'true' ? 'dinheiro' : 'pix' });
       btn.disabled = false; btn.textContent = 'Enviar pedido e pagar';
       if (error) { say(/estoque|fechada|inválid|Muitos|indispon/i.test(error.message) ? error.message + '.' : 'Não foi possível enviar o pedido. Confira os dados e tente de novo.'); loadProducts(); return }
       let total = local;
@@ -639,7 +703,15 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       store.set('rl_last', { number: data, whats: f.whats });
       cart = {}; renderCart(); e.target.reset(); openCart(false);
       prefillTrack(); loadProducts();
-      showPix({ number: data, total });
+      let note = '';
+      if (f.metodo === 'dinheiro' && S.cash_enabled === 'true') return showCash({ number: data, total });
+      if (f.metodo === 'mp' && S.mp_enabled === 'true') {
+        toast('Abrindo o pagamento no cartão...');
+        const c = await startCard(data, f.whats);
+        if (c.url) return goto(c.url);
+        note = c.error + ' Seu pedido foi registrado: pague por PIX abaixo ou tente o cartão de novo em "Acompanhar pedido".';
+      }
+      showPix({ number: data, total }, note);
     };
 
     /* ---------- acompanhar pedido ---------- */
@@ -657,14 +729,23 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       out.innerHTML = `<div style="margin-top:16px"><b>${orderNum(o.number)}</b> · <span class="muted">${new Date(o.created_at).toLocaleDateString('pt-BR')}</span>
         <div style="margin:8px 0">${o.items.map(i => `${esc(i.qtd)}x ${esc(i.produto)}${i.tamanho && i.tamanho !== 'Único' ? ' (' + esc(i.tamanho) + ')' : ''}`).join('<br>')}</div>
         <div>Total: <b>${R(o.total)}</b></div>${tl}
-        ${o.status === 'pedido_realizado' ? '<button class="btn" style="margin-top:14px" data-pay>Pagar com PIX</button>' : ''}</div>`;
+        ${o.status === 'pedido_realizado' && o.payment_method === 'dinheiro' ? '<p class="muted">Pagamento em dinheiro, em mãos, na entrega.</p>' : ''}
+        ${o.status === 'pedido_realizado' && o.payment_method !== 'dinheiro' ? (['in_process', 'pending'].includes(o.mp_status) ? '<p class="muted">Pagamento no cartão em análise pelo Mercado Pago. Assim que for aprovado, o status muda sozinho.</p>'
+          : `<div class="row" style="margin-top:14px"><button class="btn" data-pay>Pagar com PIX</button>${S.mp_enabled === 'true' ? `<button class="btn dark" data-card>Pagar no cartão (Mercado Pago)${cardOn() ? ' · ' + R(o.items.reduce((s, i) => s + Math.round(cardUnit(+i.preco) * 100) * +i.qtd, 0) / 100) : ''}</button>` : ''}</div><div class="msg cardmsg" role="alert" hidden></div>`) : ''}</div>`;
       const pb = out.querySelector('[data-pay]'); if (pb) pb.onclick = () => showPix({ number: o.number, total: +o.total });
+      const cb = out.querySelector('[data-card]');
+      if (cb) cb.onclick = async () => {
+        cb.disabled = true; const c = await startCard(o.number, $('twhats').value);
+        if (c.url) return goto(c.url);
+        cb.disabled = false; const m = out.querySelector('.cardmsg'); m.textContent = c.error; m.hidden = false;
+      };
     };
 
     $('year').textContent = new Date().getFullYear();
     $('grid').innerHTML = '<div class="card sk"></div><div class="card sk"></div><div class="card sk"></div><div class="card sk"></div>';
     prefillTrack(); renderCart();
     loadSettings().then(loadProducts);
+    mpReturn();
   </script>
 </body>
 
