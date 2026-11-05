@@ -37,6 +37,8 @@
     .stat { background: var(--s); border: 1px solid var(--l); border-radius: 14px; padding: 14px }
     .stat b { display: block; font-size: 1.5rem }
     .tag { display: inline-block; border-radius: 99px; padding: 1px 10px; font-size: .78rem; font-weight: 700; border: 1.5px solid var(--l) }
+    .hrow { border-top: 1px solid var(--l); padding: 6px 0 }
+    .orow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 }
     .tag.ok { color: var(--ok); border-color: var(--ok) }
     .tag.warn { color: var(--warn); border-color: var(--warn) }
     .tag.bad { color: var(--bad); border-color: var(--bad) }
@@ -129,7 +131,7 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
 
 
     const app = document.getElementById('app');
-    let rows = [], prods = [], revs = [], S = {}, tab = 'pedidos', filtro = 'pendentes', busca = '', edit = {};
+    let rows = [], prods = [], revs = [], S = {}, tab = 'pedidos', filtro = 'pendentes', busca = '', edit = {}, oedit = null, hopen = {}, hist = {};
 
     async function init() {
       const { data: { session } } = await sb.auth.getSession();
@@ -141,7 +143,8 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       const [o, p, s, r] = await Promise.all([sb.from('orders').select('*').order('created_at', { ascending: false }), sb.from('products').select('*').order('id'), sb.from('settings').select('*'), sb.from('reviews').select('*').order('created_at', { ascending: false })]);
       const er = o.error || p.error || s.error || r.error;
       if (er) { app.textContent = 'Erro ao carregar: ' + er.message + ' (as migrações SQL foram executadas?)'; return }
-      rows = o.data; prods = p.data; revs = r.data; S = Object.fromEntries(s.data.map(x => [x.key, x.value])); draw();
+      rows = o.data; prods = p.data; revs = r.data; S = Object.fromEntries(s.data.map(x => [x.key, x.value]));
+      await Promise.all(Object.keys(hopen).filter(k => hopen[k]).map(fetchHist)); draw();
     }
     function draw() {
       app.innerHTML = `<div class="top"><div><h1>Painel</h1><small>${e(ADMIN)}</small></div><div class="bar" style="margin:0"><a class="b2" href="index.html" target="_blank" rel="noopener">Ver loja</a><button class="btn" data-a="out">Sair</button></div></div>
@@ -164,7 +167,63 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       const amt = o.mp_amount ? `<div><small>Cobrado no cartão: ${R(o.mp_amount)}</small></div>` : '';
       return `<div><span class="tag ${cls}">${e(payLabel(o))}</span></div>${amt}${warn}`;
     }
+    const waNum = w => '55' + String(w).replace(/\D/g, '').replace(/^55(?=\d{11}$)/, '');
+    function confirmLink(o) {
+      const first = String(o.customer_name || '').trim().split(/\s+/)[0] || '';
+      const itens = o.items.map(i => `${i.qtd}x ${i.produto}${i.tamanho && i.tamanho !== 'Único' ? ' (' + i.tamanho + ')' : ''}`).join('\n');
+      const txt = `Olá${first ? ', ' + first : ''}! Aqui é do grupo Raio de Luz. Recebemos o seu pedido ${num(o.number)}:\n\n${itens}\n\nTotal: ${R(o.total)}\nPagamento: ${payLabel(o)}\n\nEstá tudo certo com o pedido? Responda SIM para confirmar ou me diga o que precisa ajustar.`;
+      return `https://wa.me/${waNum(o.whatsapp)}?text=${encodeURIComponent(txt)}`;
+    }
+    /* ---------- editar pedido e histórico ---------- */
+    const MPLOCK = ['approved', 'in_process', 'pending'];
+    async function fetchHist(id) {
+      const { data, error } = await sb.from('order_history').select('*').eq('order_id', id).order('created_at', { ascending: false });
+      if (error) { toast('Histórico indisponível: ' + error.message + ' (rodou o migracao-historico.sql?)'); hist[id] = []; return }
+      hist[id] = data || [];
+    }
+    const HK = { criado: 'Criado', status: 'Status', edicao: 'Edição', pagamento: 'Pagamento' };
+    function histHtml(id) {
+      const h = hist[id];
+      if (!h) return '<div class="box m">Carregando histórico...</div>';
+      return `<div class="box"><b>Histórico do pedido</b>${h.length ? h.map(x => `<div class="hrow"><small>${new Date(x.created_at).toLocaleString('pt-BR')} · ${e(x.actor)} · ${e(HK[x.kind] || x.kind)}</small><div>${e(x.summary)}</div></div>`).join('') : '<p class="m">Sem registros.</p>'}</div>`;
+    }
+    const variantsOf = (p, cur) => {
+      const ks = Object.keys((p && p.stock) || {}); if (cur && !ks.includes(cur)) ks.push(cur);
+      return ks.sort((a, b) => { const x = splitKey(a), y = splitKey(b); return x.color.localeCompare(y.color, 'pt-BR') || sizeCmp(x.size, y.size) });
+    };
+    function oTotal() {
+      const o = rows.find(x => x.id === oedit.id);
+      return oedit.items.reduce((s, it) => {
+        const p = prods.find(x => x.id == it.id), old = o.items.find(x => x.id == it.id);
+        return s + (old ? Number(old.preco) : p ? Number(p.price) : 0) * (+it.qtd || 0);
+      }, 0);
+    }
+    function snapO() {
+      const f = app.querySelector('[data-of]'); if (!f || !oedit) return;
+      oedit.nome = f.elements.nome.value; oedit.whats = f.elements.whats.value; oedit.email = f.elements.email.value; oedit.obs = f.elements.obs.value;
+      if (!oedit.locked) oedit.items = [...f.querySelectorAll('[data-orow]')].map(r => ({ id: +r.querySelector('[data-k=id]').value, tamanho: r.querySelector('[data-k=tamanho]').value, qtd: +r.querySelector('[data-k=qtd]').value || 1, produto: r.dataset.prod || '' }));
+    }
+    function orderEditForm(o) {
+      const L = oedit.locked;
+      const rowsHtml = oedit.items.map((it, i) => {
+        const p = prods.find(x => x.id == it.id);
+        return `<div class="orow" data-orow data-prod="${e(it.produto || '')}"><select data-k="id" data-i="${i}" aria-label="Produto">${p ? '' : `<option value="${e(it.id)}" selected>${e(it.produto || 'Produto removido')}</option>`}${prods.map(x => `<option value="${x.id}"${x.id == it.id ? ' selected' : ''}>${e(x.name)}</option>`).join('')}</select>
+          <select data-k="tamanho" data-i="${i}" aria-label="Opção">${variantsOf(p, it.tamanho).map(k => `<option value="${e(k)}"${k === it.tamanho ? ' selected' : ''}>${e(k)}${p && !p.made_to_order ? ' (' + (Number((p.stock || {})[k]) || 0) + ' em estoque)' : ''}</option>`).join('')}</select>
+          <input type="number" data-k="qtd" data-i="${i}" min="1" max="50" value="${e(it.qtd)}" aria-label="Quantidade" style="width:80px">
+          <button type="button" class="b2 red" data-a="oi-del" data-i="${i}" aria-label="Remover item">Remover</button></div>`;
+      }).join('');
+      return `<form class="o" data-of="${o.id}"><div class="top"><b>Editando ${num(o.number)}</b><small>As alterações ficam registradas no histórico.</small></div>
+        <div class="fg"><label>Nome<input name="nome" maxlength="100" value="${e(oedit.nome)}" required></label>
+        <label>WhatsApp<input name="whats" inputmode="tel" value="${e(oedit.whats)}" required></label>
+        <label>E-mail<input name="email" type="email" maxlength="120" value="${e(oedit.email)}"></label>
+        <label class="span2">Observações<textarea name="obs" rows="2" maxlength="500">${e(oedit.obs)}</textarea></label></div>
+        <b>Itens</b>
+        ${L ? `<div class="m">${o.items.map(i => `${e(i.qtd)}x ${e(i.produto)} (${e(i.tamanho)})`).join('<br>')}<br><small>Itens bloqueados: o pagamento no cartão já foi iniciado ou aprovado. Para mudar os itens, cancele este pedido e crie outro.</small></div>`
+          : `${rowsHtml}<div class="bar"><button type="button" class="b2" data-a="oi-add">+ Adicionar item</button><span>Total: <b id="ototal">${R(oTotal())}</b> <small>(itens já no pedido mantêm o preço combinado; itens novos usam o preço atual)</small></span></div>`}
+        <div class="bar"><button class="btn" type="submit" data-save>Salvar alterações</button><button type="button" class="b2" data-a="oedit-cancel">Cancelar</button></div></form>`;
+    }
     function orderCard(o) {
+      if (oedit && oedit.id === o.id) return orderEditForm(o);
       const c = o.status === 'cancelado', tag = o.status === 'pedido_realizado' ? 'warn' : c ? 'bad' : 'ok';
       return `<div class="o"><div class="top"><b>${num(o.number)} · ${e(o.customer_name)}</b><small>${new Date(o.created_at).toLocaleString('pt-BR')}</small></div>
       <div><span class="tag ${tag}">${ST[o.status] || e(o.status)}</span></div>${payInfo(o)}
@@ -172,8 +231,10 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       <div>Total: <b>${R(o.total)}</b> · <a href="https://wa.me/55${e(o.whatsapp.replace(/\D/g, '').replace(/^55(?=\d{11}$)/, ''))}" target="_blank" rel="noopener">${e(o.whatsapp)}</a>${o.email ? ' · ' + e(o.email) : ''}</div>
       ${o.notes ? `<small>Obs: ${e(o.notes)}</small>` : ''}
       <div class="bar" style="margin:0">${NEXT[o.status] ? `<button class="btn" data-a="next" data-id="${o.id}">${NEXTLBL[NEXT[o.status]]}</button>` : ''}
+      ${c ? '' : `<a class="btn dark" data-confirm href="${confirmLink(o)}" target="_blank" rel="noopener" style="text-decoration:none">Pedir confirmação no WhatsApp</a>`}
       <select data-st="${o.id}" aria-label="Alterar status"${c ? ' disabled' : ''}>${Object.entries(ST).map(([k, v]) => `<option value="${k}"${k === o.status ? ' selected' : ''}>${v}</option>`).join('')}</select>
-      ${c ? `<button class="b2 red" data-a="delo" data-id="${o.id}">Excluir pedido</button><small>Cancelado: não pode mais ser alterado.</small>` : ''}</div></div>`;
+      ${c ? '' : `<button class="b2" data-a="oedit" data-id="${o.id}">Editar pedido</button>`}<button class="b2" data-a="ohist" data-id="${o.id}">${hopen[o.id] ? 'Ocultar histórico' : 'Histórico'}</button>
+      ${c ? `<button class="b2 red" data-a="delo" data-id="${o.id}">Excluir pedido</button><small>Cancelado: não pode mais ser alterado.</small>` : ''}</div>${hopen[o.id] ? histHtml(o.id) : ''}</div>`;
     }
     function listHtml() {
       const v = visible();
@@ -309,6 +370,11 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
       else if (a === 'tab') { if ((edit.added || []).length) await discardAdded(); tab = b.dataset.v; draw() }
       else if (a === 'csv') csv();
       else if (a === 'next') { const o = rows.find(x => x.id === id); run(sb.from('orders').update({ status: NEXT[o.status] }).eq('id', id), 'Não foi possível atualizar') }
+      else if (a === 'oedit') { const o = rows.find(x => x.id === id); oedit = { id, nome: o.customer_name, whats: o.whatsapp, email: o.email || '', obs: o.notes || '', locked: MPLOCK.includes(o.mp_status), items: o.items.map(i => ({ id: i.id, tamanho: i.tamanho, qtd: i.qtd, produto: i.produto })) }; draw() }
+      else if (a === 'oedit-cancel') { oedit = null; draw() }
+      else if (a === 'oi-add') { snapO(); const p0 = prods.find(x => x.active !== false) || prods[0]; if (!p0) return toast('Cadastre um produto primeiro'); oedit.items.push({ id: p0.id, tamanho: variantsOf(p0)[0] || '', qtd: 1, produto: p0.name }); draw() }
+      else if (a === 'oi-del') { snapO(); if (oedit.items.length <= 1) return toast('O pedido precisa ter pelo menos um item'); oedit.items.splice(+b.dataset.i, 1); draw() }
+      else if (a === 'ohist') { hopen[id] = !hopen[id]; if (hopen[id] && !hist[id]) { draw(); await fetchHist(id) } draw() }
       else if (a === 'delo') { if (confirm('Excluir este pedido cancelado de vez?')) run(sb.from('orders').delete().eq('id', id)) }
       else if (a === 'ed') { if ((edit.added || []).length) await discardAdded(); edit = { ...p, images: [...(p.images && p.images.length ? p.images : (p.image_url ? [p.image_url] : []))], added: [], removed: [] }; draw(); scrollTo(0, 0) }
       else if (a === 'cancel') { await discardAdded(); draw() }
@@ -339,7 +405,12 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     });
     app.addEventListener('change', ev => {
       const t = ev.target;
-      if (t.matches('[data-foto]')) uploadMany(t);
+      if (t.matches('[data-k]') && oedit && t.closest('[data-of]')) {
+        snapO();
+        if (t.dataset.k === 'id') { const it = oedit.items[+t.dataset.i], p = prods.find(x => x.id == t.value); it.produto = p ? p.name : it.produto; it.tamanho = variantsOf(p)[0] || ''; draw() }
+        else { const el = document.getElementById('ototal'); if (el) el.textContent = R(oTotal()) }
+      }
+      else if (t.matches('[data-foto]')) uploadMany(t);
       else if (t.name === 'mto') { snapEdit(); draw() }
       else if (t.matches('[data-f]')) { filtro = t.value; draw() }
       else if (t.matches('[data-st]')) {
@@ -349,7 +420,19 @@ const variantKey = (c, s) => c ? c + ' / ' + s : s;
     });
     app.addEventListener('submit', async ev => {
       const form = ev.target;
-      if (form.matches('[data-pf]')) {
+      if (form.matches('[data-of]')) {
+        ev.preventDefault(); snapO();
+        const o = rows.find(x => x.id === oedit.id), btn = form.querySelector('[data-save]');
+        const norm = a => JSON.stringify(a.map(i => [+i.id, String(i.tamanho), +i.qtd]));
+        const changedItems = !oedit.locked && norm(oedit.items) !== norm(o.items);
+        const nothing = !changedItems && oedit.nome.trim() === o.customer_name && oedit.whats.trim() === o.whatsapp && oedit.email.trim() === (o.email || '') && oedit.obs.trim() === (o.notes || '');
+        if (nothing) { oedit = null; draw(); return toast('Nenhuma alteração feita') }
+        btn.disabled = true; btn.textContent = 'Salvando...';
+        const { error } = await sb.rpc('admin_edit_order', { p_id: o.id, p_nome: oedit.nome, p_whats: oedit.whats, p_email: oedit.email || null, p_obs: oedit.obs || null, p_items: changedItems ? oedit.items.map(i => ({ id: +i.id, tamanho: i.tamanho, qtd: +i.qtd })) : null });
+        if (error) { btn.disabled = false; btn.textContent = 'Salvar alterações'; return toast('Não foi possível salvar: ' + error.message) }
+        oedit = null; delete hist[o.id]; await load(); toast('Pedido atualizado');
+      }
+      else if (form.matches('[data-pf]')) {
         ev.preventDefault();
         const f = Object.fromEntries(new FormData(form)), st = parse(f.stock), btn = form.querySelector('[data-save]');
         if (!Object.keys(st).length) return toast('Informe o estoque, por exemplo: P=5, M=3 (ou Preto: P=5, M=3)');
